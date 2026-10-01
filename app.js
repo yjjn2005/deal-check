@@ -76,6 +76,11 @@
   const pct = (x, d) => x == null || isNaN(x) ? '—' : (x * 100).toFixed(d == null ? 2 : d) + '%';
   const pp = (x, d) => x == null || isNaN(x) ? '—' : (x >= 0 ? '+' : '') + (x * 100).toFixed(d == null ? 1 : d) + '%p';
   const num = v => { const n = parseFloat(String(v).replace(/[^\d.\-]/g, '')); return isNaN(n) ? 0 : n; };
+  const money = v => { const s = String(v == null ? '' : v).replace(/,/g, '').replace(/원/g, '').trim(); if (!s) return 0; let total = 0, hit = false, rest = s;
+    const take = (re, mul) => { const m = rest.match(re); if (m) { total += parseFloat(m[1]) * mul; hit = true; rest = rest.replace(m[0], ' '); } };
+    take(/([\d.]+)\s*억/, 1e8); take(/([\d.]+)\s*천\s*만/, 1e7); take(/([\d.]+)\s*백\s*만/, 1e6); take(/([\d.]+)\s*만/, 1e4); take(/([\d.]+)\s*천(?!\s*만)/, 1e3);
+    if (hit) return Math.round(total); const n = parseFloat(s.replace(/[^\d.\-]/g, '')); if (isNaN(n)) return 0; return Math.round(n); };
+  const moneyEok = v => { const s = String(v == null ? '' : v).trim(); if (/^[\d.,]+$/.test(s)) { const n = parseFloat(s.replace(/,/g, '')); if (n > 0 && n < 100000) return Math.round(n * 1e8); } return money(v); }; // 가격 필드: 숫자만 10만 미만이면 억 단위 (예: 117 → 117억)
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const pill = (t, k) => `<span class="pill ${k}">${esc(t)}</span>`;
   const statusPill = s => ({ ok: pill('통과', 'ok'), warn: pill('주의', 'warn'), bad: pill('위험', 'bad'), na: pill('미확인', 'na') }[s] || '');
@@ -93,7 +98,7 @@
   function field(label, key, val, type, opts) {
     type = type || 'text';
     if (type === 'select') return `<div class="field"><label>${label}</label><select data-k="${key}">${opts.map(o => `<option value="${o[0]}" ${String(o[0]) === String(val) ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>`;
-    if (type === 'money') return `<div class="field"><label>${label}</label><input data-k="${key}" data-t="money" value="${val ? Math.round(val).toLocaleString('ko-KR') : ''}" inputmode="numeric"></div>`;
+    if (type === 'money' || type === 'eok') return `<div class="field"><label>${label}</label><input data-k="${key}" data-t="money" ${type === 'eok' ? 'data-eok="1"' : ''} value="${val ? Math.round(val).toLocaleString('ko-KR') : ''}" inputmode="text" placeholder="${type === 'eok' ? '예: 117 또는 117억' : '예: 1,500만 / 15,000,000'}"></div>`;
     if (type === 'pct') return `<div class="field"><label>${label}</label><input data-k="${key}" data-t="pct" value="${val != null ? (val * 100).toFixed(2) : ''}" inputmode="decimal"></div>`;
     if (type === 'num') return `<div class="field"><label>${label}</label><input data-k="${key}" data-t="num" value="${val ?? ''}" inputmode="decimal"></div>`;
     if (type === 'date') return `<div class="field"><label>${label}</label><input data-k="${key}" data-t="date" type="date" value="${val || ''}"></div>`;
@@ -106,13 +111,27 @@
     root.querySelectorAll('[data-k]').forEach(el => {
       el.addEventListener('change', () => {
         let v = el.value; const t = el.dataset.t;
-        if (t === 'money' || t === 'num') v = num(v); else if (t === 'pct') v = num(v) / 100; else if (t === 'bool') v = v === '1';
+        if (t === 'money') v = el.dataset.eok ? moneyEok(v) : money(v); else if (t === 'num') v = num(v); else if (t === 'pct') v = num(v) / 100; else if (t === 'bool') v = v === '1';
         setPath(target, el.dataset.k, v); if (t === 'money') el.value = v ? Math.round(v).toLocaleString('ko-KR') : '';
         save(); if (after) after(el.dataset.k);
       });
     });
   }
 
+  function recentHighPrice(c) {
+    const used = (c.comps || []).filter(x => x.use !== false && x.price > 0); if (!used.length) return null;
+    const t = C.TYPES[c.type] || C.TYPES.retail;
+    if (t.income && c.saleScope === 'part' && c.exclusiveArea) { const u = used.filter(x => x.pricePerSqmBldg > 0); if (!u.length) return null; const top = u.reduce((m, x) => x.pricePerSqmBldg > m.pricePerSqmBldg ? x : m, u[0]); return { price: Math.round(top.pricePerSqmBldg * c.exclusiveArea), basis: `최근 거래 최고 전용단가 ${fmt(top.pricePerSqmBldg)}/㎡ (${top.addr} ${top.date}) × ${c.exclusiveArea}㎡`, ref: top }; }
+    const area = c.landArea || 0; if (!area) return null; const u = used.filter(x => x.pricePerSqm > 0); if (!u.length) return null; const top = u.reduce((m, x) => x.pricePerSqm > m.pricePerSqm ? x : m, u[0]);
+    return { price: Math.round(top.pricePerSqm * area), basis: `최근 거래 최고 토지단가 ${fmt(top.pricePerSqm)}/㎡ (${top.addr} ${top.date}) × ${area}㎡`, ref: top };
+  }
+  function applyPriceDefaults(c, force) {
+    const h = recentHighPrice(c); let changed = false;
+    if ((force === 'ask' || !c.ask) && h) { c.ask = h.price; c.askBasis = h.basis; c.askAuto = true; changed = true; }
+    if ((force === 'hope' || !c.sellerHope) && c.ask) { c.sellerHope = Math.round(c.ask * (1 + (state.settings.hopeMarkup ?? 0.20))); c.sellerHopeAuto = true; changed = true; }
+    if (!c.buyerHope && c.ask) { c.buyerHope = Math.round(c.ask * 0.9); c.buyerHopeAuto = true; changed = true; }
+    return changed;
+  }
   function kpi(l, v, n, cls) { return `<div class="kpi ${cls || ''}"><div class="l">${l}</div><div class="v">${v}</div><div class="n">${n || ''}</div></div>`; }
   function hero(k, v, d) { return `<section class="hero"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></section>`; }
   function card(h, body, r) { return `<section class="card">${h ? `<h3>${h}${r ? `<span class="r">${r}</span>` : ''}</h3>` : ''}${body}</section>`; }
@@ -133,10 +152,10 @@ ${field('케이스 이름', 'name', c.name)}${field('소재지(지번)', 'addres
 ${t.income ? field('연면적(㎡)', 'gfa', c.gfa, 'num') + field('매각 범위', 'saleScope', c.saleScope || 'whole', 'select', [['whole', '건물 전체(토지 포함)'], ['part', '일부 층·구분소유(집합)']]) + field('매각(전용)면적 ㎡ — 구분소유 시', 'exclusiveArea', c.exclusiveArea, 'num') + field('시장 임대료 ₩/㎡·월 (렌트롤 없을 때 추정)', 'marketRentPerSqm', c.marketRentPerSqm, 'money') + field('일괄매각 규모 할인 (소규모 구분상가 단가 대비)', 'bulkDiscount', c.bulkDiscount ?? 0.30, 'pct') + field('준공연도', 'builtYear', c.builtYear) + field('층수', 'floors', c.floors) + field('주차', 'parking', c.parking) + field('승강기', 'elevator', c.elevator) + field('개별공시지가(₩/㎡)', 'publicPricePerSqm', c.publicPricePerSqm, 'money') + field('주용도', 'mainUse', c.mainUse) : field('개별공시지가(₩/㎡)', 'publicPricePerSqm', c.publicPricePerSqm, 'money') + field('법정 용적률(%)', 'far', c.far ? c.far * 100 : '', 'num') + field('인근 분양·대지 단가(₩/㎡, 개발가치용)', 'devUnitPrice', c.devUnitPrice, 'money') + field('전용 후 사용 예정', 'willConvert', c.willConvert, 'check')}
 </div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.autoCollect()">주소로 자동 수집 (토지정보·건축물대장·실거래)</button><button class="btn sm" onclick="App.lookupLand()">토지정보만</button>${t.income ? '<button class="btn sm" onclick="App.fetchBldg()">건축물대장만</button>' : ''}</div>`)}
 ${card('가격 · 금융', `<div class="fgrid g2" id="price">
-${field('매도 호가', 'ask', c.ask, 'money')}${field('매도 희망가', 'sellerHope', c.sellerHope, 'money')}${field('매수 희망가', 'buyerHope', c.buyerHope, 'money')}${field('매수 주체', 'buyerType', c.buyerType, 'select', [['indiv', '개인'], ['corp', '법인']])}
+${field('매도 호가 (억 단위 입력 가능)', 'ask', c.ask, 'eok')}${field('매도 희망가 (기본: 호가 +' + Math.round((state.settings.hopeMarkup ?? 0.2) * 100) + '%)', 'sellerHope', c.sellerHope, 'eok')}${field('매수 희망가 (기본: 호가 −10%)', 'buyerHope', c.buyerHope, 'eok')}${field('매수 주체', 'buyerType', c.buyerType, 'select', [['indiv', '개인'], ['corp', '법인']])}
 ${field('대출 비율 LTV', 'ltv', c.ltv, 'pct')}${field('적용 금리', 'loanRate', c.loanRate, 'pct')}${field('상환 방식', 'interestOnly', c.interestOnly, 'select', [[true, '이자만 상환'], [false, '원리금균등 20년']])}${field('수도권 대도시 법인 중과', 'bigCity', c.bigCity, 'check')}
 ${t.income ? field('NOI 성장률(연)', 'growth', c.growth, 'pct') + field('공실률 가정', 'vacancy', c.vacancy, 'pct') + field('운영경비율(GPI 대비)', 'opexRatio', c.opexRatio, 'pct') + field('보증금 운용수익률', 'depositYield', c.depositYield, 'pct') + field('토지 공시지가 총액(보유세)', 'landPublic', c.landPublic, 'money') + field('건물 시가표준액(보유세)', 'buildingStd', c.buildingStd, 'money') : field('지가 상승률 가정(연)', 'landGrowth', c.landGrowth, 'pct') + field('보유 계획(년)', 'holdYearsPlan', c.holdYearsPlan || 5, 'num') + field('2년 이상 자경 농업인(취득세 1.5%)', 'farmSelf2y', c.farmSelf2y, 'check')}
-</div>`)}
+</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm" onclick="App.setAskFromComps()">호가 = 최근 거래 최고가</button><button class="btn sm" onclick="App.setHopeFromAsk()">희망가 = 호가 +${Math.round((state.settings.hopeMarkup ?? 0.2) * 100)}%</button></div><div class="muted" style="margin-top:6px">${c.askAuto && c.askBasis ? '호가 자동: ' + esc(c.askBasis) : '브로셔 호가가 없으면 실거래 수집 후 최근 거래 최고가로 자동 설정됩니다'}${c.sellerHopeAuto ? ' · 희망가 자동(호가 +' + Math.round((state.settings.hopeMarkup ?? 0.2) * 100) + '%)' : ''}</div>`)}
 </div>
 ${t.income ? card('임대차 현황 (렌트롤)', `<table><thead><tr><th>층</th><th>임차인</th><th>보증금</th><th>월임대료</th><th>월관리비</th><th>만료</th><th>상태</th><th></th></tr></thead><tbody>${rr}</tbody>
 <tfoot><tr class="total"><td colspan="2">총합계</td><td>${fmt(n.deposit)}</td><td>${fmt(n.rentY / 12)}</td><td colspan="4" class="muted">연 GPI ${fmt(n.gpi)} · NOI ${fmt(n.noi)} · 공실 ${c.rentroll.filter(r => r.vacant).length}/${c.rentroll.length}층 ${c.ask ? '· 호가 표면수익률 ' + pct(n.rentY / (c.ask - n.deposit)) : ''}</td></tr></tfoot></table>`, `<button class="btn sm" onclick="App.addRent()">+ 층 추가</button>`) : card('토지 메모', `<div class="field"><label>현황·특이사항</label><textarea data-k="notes" rows="3">${esc(c.notes)}</textarea></div>`)}
@@ -144,8 +163,8 @@ ${t.income ? card('임대차 현황 (렌트롤)', `<table><thead><tr><th>층</th
     return html;
   }
   function afterInput(root) {
-    bindInputs(root, state.current, k => { if (k === 'name') renderSide(); });
-    root.querySelectorAll('[data-rr]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.rr.split('.'); let v = el.value; if (el.dataset.t === 'money') v = num(v); if (el.dataset.t === 'bool') v = v === '1'; state.current.rentroll[+i][k] = v; save(); render(); }));
+    bindInputs(root, state.current, k => { if (k === 'name') renderSide(); if (k === 'ask') { const c = state.current; c.askAuto = false; if (!c.sellerHope || c.sellerHopeAuto) { c.sellerHope = Math.round(c.ask * (1 + (state.settings.hopeMarkup ?? 0.2))); c.sellerHopeAuto = true; } if (!c.buyerHope || c.buyerHopeAuto) { c.buyerHope = Math.round(c.ask * 0.9); c.buyerHopeAuto = true; } save(); render(); } if (k === 'sellerHope') state.current.sellerHopeAuto = false; if (k === 'buyerHope') state.current.buyerHopeAuto = false; });
+    root.querySelectorAll('[data-rr]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.rr.split('.'); let v = el.value; if (el.dataset.t === 'money') v = money(v); if (el.dataset.t === 'bool') v = v === '1'; state.current.rentroll[+i][k] = v; save(); render(); }));
     const drop = root.querySelector('#drop'); const fi = root.querySelector('#brochure');
     if (drop) { ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.style.background = '#efe9dc'; })); ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.style.background = ''; })); drop.addEventListener('drop', ev => handleFile(ev.dataTransfer.files[0])); fi.addEventListener('change', () => handleFile(fi.files[0])); }
   }
@@ -198,6 +217,7 @@ ${t.income ? card('임대차 현황 (렌트롤)', `<table><thead><tr><th>층</th
     const short = (c.address || '').replace(/^(서울특별시|서울시|서울|경기도|경기)\s*/, '').split(' ').slice(0, 3).join(' ');
     c.name = (c.buildingName ? c.buildingName + ' ' : '') + (short || '브로셔 물건') + (c.scopeNote ? ' (' + c.scopeNote + ')' : '');
     if (ex.notes) c.notes = ex.notes;
+    if (c.ask) { c.askAuto = false; if (!c.sellerHope) { c.sellerHope = Math.round(c.ask * (1 + (state.settings.hopeMarkup ?? 0.2))); c.sellerHopeAuto = true; } if (!c.buyerHope) { c.buyerHope = Math.round(c.ask * 0.9); c.buyerHopeAuto = true; } }
     c.extracted = { file: fname, source, missing: ex.missing || [], confidence: ex.confidence };
     save(); render(); toast('추출 완료 — 주소로 공적장부·실거래를 자동 수집합니다');
     if (c.address) autoCollect().catch(() => { });
@@ -235,7 +255,7 @@ ${card('법률·행정 리스크 판정', `<div>${risks}</div><div style="displa
   }
   function afterMarket(root) {
     bindInputs(root, state.current, () => { });
-    root.querySelectorAll('[data-c]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.c.split('.'); const x = state.current.comps[+i]; let v = el.type === 'checkbox' ? el.checked : el.value; if (el.dataset.t === 'money' || el.dataset.t === 'num') v = num(v); x[k] = v; if (x.area > 0 && x.price > 0) x.pricePerSqm = Math.round(x.price / x.area); save(); render(); }));
+    root.querySelectorAll('[data-c]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.c.split('.'); const x = state.current.comps[+i]; let v = el.type === 'checkbox' ? el.checked : el.value; if (el.dataset.t === 'money') v = money(v); else if (el.dataset.t === 'num') v = num(v); x[k] = v; if (x.area > 0 && x.price > 0) x.pricePerSqm = Math.round(x.price / x.area); save(); render(); }));
     root.querySelectorAll('[data-r]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.r.split('.'); let v = el.value; if (el.dataset.t === 'money') v = num(v); if (el.dataset.t === 'pct') v = num(v) / 100; state.current.risks[+i][k] = v; save(); if (k !== 'memo') render(); }));
   }
 
@@ -290,7 +310,7 @@ ${card('전용·취득 비용', `<div class="grid g2">${kpi('전용부담금', f
   function renderSell() {
     const c = state.current; const s = c.seller; const ev = evaluate(); if (!ev) return ''; const t = ev.type;
     const bp = (s.bizPeriods || []).map((b, i) => `<tr><td><input data-bp="${i}.from" type="date" value="${b.from || ''}"></td><td><input data-bp="${i}.to" type="date" value="${b.to && b.to < '2099' ? b.to : ''}"></td><td><input data-bp="${i}.type" value="${esc(b.type || '')}" placeholder="임대·주차장·자경 등"></td><td><button class="btn sm" onclick="App.delBp(${i})">삭제</button></td></tr>`).join('');
-    const inputs = card('매도자 입력', `<div class="fgrid g4" id="sellerform">${field('소유 주체', 'seller.ownerType', s.ownerType, 'select', [['indiv', '개인'], ['corp', '법인']])}${field('취득일', 'seller.acquired', s.acquired, 'date')}${field('취득가액', 'seller.acquiredPrice', s.acquiredPrice, 'money')}${field('필요경비(취득세·중개·자본적지출)', 'seller.expenses', s.expenses, 'money')}${field('양도 예정일', 'seller.transfer', s.transfer, 'date')}${field('목표 세후 수익(취득원가 초과)', 'seller.targetNet', s.targetNet, 'money')}${field('지분율', 'seller.share', s.share, 'pct')}${field('중개·법무비율', 'seller.sellCostRate', s.sellCostRate, 'pct')}${field('부가세(건물분, 포괄양수도 아니면)', 'seller.vat', s.vat, 'money')}</div>
+    const inputs = card('매도자 입력', `<div class="fgrid g4" id="sellerform">${field('소유 주체', 'seller.ownerType', s.ownerType, 'select', [['indiv', '개인'], ['corp', '법인']])}${field('취득일', 'seller.acquired', s.acquired, 'date')}${field('취득가액', 'seller.acquiredPrice', s.acquiredPrice, 'eok')}${field('필요경비(취득세·중개·자본적지출)', 'seller.expenses', s.expenses, 'money')}${field('양도 예정일', 'seller.transfer', s.transfer, 'date')}${field('목표 세후 수익(취득원가 초과)', 'seller.targetNet', s.targetNet, 'eok')}${field('지분율', 'seller.share', s.share, 'pct')}${field('중개·법무비율', 'seller.sellCostRate', s.sellCostRate, 'pct')}${field('부가세(건물분, 포괄양수도 아니면)', 'seller.vat', s.vat, 'money')}</div>
 ${t.land ? `<h3 style="margin-top:14px">사업 사용 기간 (재촌·자경, 주차장업, 건축 등)</h3><table><thead><tr><th>시작</th><th>종료(진행 중이면 비움)</th><th>사용 형태</th><th></th></tr></thead><tbody>${bp}</tbody></table><button class="btn sm" style="margin-top:8px" onclick="App.addBp()">+ 기간 추가</button>` : '<div class="muted" style="margin-top:10px">건물 부속토지는 바닥면적 배율(도시 3~5배) 이내이면 사업용으로 봅니다(소득세법 시행령 §168의11). 배율 초과분·별도 나대지는 토지 유형으로 따로 검토하세요.</div>'}`);
     if (!s.acquiredPrice || !s.acquired) return inputs + '<div class="notice info">취득일·취득가액을 입력하면 세후 역산과 양도세 시뮬레이션이 표시됩니다.</div>';
     const j = ev.judgement; const st = ev.sellerTax; const base = c.ask || ev.sellerFair; const ap = (t.income || j.business) ? st.biz : st.now;
@@ -333,7 +353,7 @@ ${card('가격 축 — 거래성사 가능 구간', `<div class="axis"><div clas
 <div class="notice ${z.hasZone ? 'ok' : 'bad'}" style="margin-top:6px">${z.hasZone ? `<b>ZOPA 형성</b> — ${eok(z.zone.low)} ~ ${eok(z.zone.high)} · 추천 성사가 <b>${fmt(z.recommended)}</b> (매수자 우위 가중 ${state.settings.zopaWeight}) ${z.buyerHopeIn ? '· 매수 희망가 구간 내' : ''} ${z.sellerHopeIn ? '· 매도 희망가 구간 내' : ''}` : `<b>ZOPA 미형성</b> — WTA ${eok(ev.wtaFinal)} > WTP ${eok(ev.wtp)} · 괴리 <b>${eok(z.gap)} (${pct(z.gapPct, 0)})</b>. 조건 교환 시 중간값 ${fmt(z.recommended)}`}</div>`, `${pill(c.ask ? '호가 대비 ' + pct(z.askGapPct, 0) : '', 'info')}`)}
 <section class="hero" style="justify-content:center"><div class="k">추천 등급</div><div style="display:flex;align-items:baseline;gap:12px"><div class="big">${g.grade}</div><div style="opacity:.85">${g.label}</div></div><div class="d">${z.hasZone ? '구간 형성' : '구간 없음'} · ${ev.noIncome ? '임대료 미입력(비준만)' : '스프레드 ' + pp(ev.spread) + ' · ' + (ev.dscr != null ? 'DSCR ' + ev.dscr.toFixed(2) : '토지')} · 위험 ${ev.riskBad}건 · 주의 ${ev.riskWarn}건</div></section>
 </div>
-<div class="grid g2">${card('매수자 결정', decisionBuyer(ev, c) + `<div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" onclick="App.printReport('buy')">매수 검토 보고서</button><button class="btn" onclick="App.setTab('buy')">가치 상세</button></div>`)}${card('매도자 결정', (c.seller && c.seller.acquiredPrice ? decisionSeller(ev, c) : '<div class="muted">매도·세무 탭에서 취득 정보를 입력하면 매도자 결정이 표시됩니다.</div>') + `<div style="display:flex;gap:8px;margin-top:12px"><button class="btn gold" onclick="App.printReport('sell')">매도 검토 보고서</button><button class="btn" onclick="App.setTab('sell')">세무 상세</button></div>`)}</div>
+<div class="grid g2">${card('매수자 결정', decisionBuyer(ev, c) + `<div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" onclick="App.previewReport('buy');App.setTab('report')">매수 검토 보고서</button><button class="btn" onclick="App.setTab('buy')">가치 상세</button></div>`)}${card('매도자 결정', (c.seller && c.seller.acquiredPrice ? decisionSeller(ev, c) : '<div class="muted">매도·세무 탭에서 취득 정보를 입력하면 매도자 결정이 표시됩니다.</div>') + `<div style="display:flex;gap:8px;margin-top:12px"><button class="btn gold" onclick="App.previewReport('sell');App.setTab('report')">매도 검토 보고서</button><button class="btn" onclick="App.setTab('sell')">세무 상세</button></div>`)}</div>
 ${card('협상 논거 (양측 균형)', `<div class="grid g2"><div><b style="color:var(--navy)">가격 인하 논거 (매수자용)</b><ul style="margin:6px 0 0 18px;padding:0;font-size:13px">${args.down.map(a => `<li>${a}</li>`).join('')}</ul></div><div><b style="color:var(--navy)">가격 방어 논거 (매도자용)</b><ul style="margin:6px 0 0 18px;padding:0;font-size:13px">${args.up.map(a => `<li>${a}</li>`).join('')}</ul></div></div>`)}`;
   }
   function negotiationArgs(ev, c) {
@@ -358,7 +378,9 @@ ${card('협상 논거 (양측 균형)', `<div class="grid g2"><div><b style="col
   };
   function renderReport() {
     const ol = k => `<div class="outline">${OUTLINES[k].map((o, i) => `<div class="it"><div class="n">${i + 1}</div><div><b>${o[0]}</b><small>${o[1]}</small></div></div>`).join('')}</div>`;
-    return `<div class="grid g3">${card('매수 검토 보고서 · 7부', ol('buy') + `<button class="btn primary" style="margin-top:12px" onclick="App.printReport('buy')">PDF 저장 (인쇄)</button>`)}${card('매도 검토 보고서 · 7부', ol('sell') + `<button class="btn gold" style="margin-top:12px" onclick="App.printReport('sell')">PDF 저장 (인쇄)</button>`)}${card('협상 보고서 · 4부 (양측 공유용)', ol('nego') + `<button class="btn" style="margin-top:12px" onclick="App.printReport('nego')">PDF 저장 (인쇄)</button>`)}</div>
+    const btns = k => `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn ${k === 'buy' ? 'primary' : k === 'sell' ? 'gold' : ''}" onclick="App.previewReport('${k}')">미리보기</button><button class="btn" onclick="App.printReport('${k}')">PDF 저장 (새 창 인쇄)</button><button class="btn sm" onclick="App.downloadReport('${k}')">HTML 저장</button></div>`;
+    const preview = state.reportHtml ? `<section class="card" id="preview"><h3>미리보기 — ${state.reportKind === 'buy' ? '매수 검토 보고서' : state.reportKind === 'sell' ? '매도 검토 보고서' : '협상 보고서'}<span class="r"><button class="btn sm primary" onclick="App.printReport('${state.reportKind}')">PDF 저장</button></span></h3><div class="rp" style="background:#fff;border:1px solid var(--line);padding:16px 20px;max-height:900px;overflow:auto">${state.reportHtml}</div></section>` : '';
+    return `<div class="grid g3">${card('매수 검토 보고서 · 7부', ol('buy') + btns('buy'))}${card('매도 검토 보고서 · 7부', ol('sell') + btns('sell'))}${card('협상 보고서 · 4부 (양측 공유용)', ol('nego') + btns('nego'))}</div>${preview}
 ${card('출력 규칙', `<div class="muted">A4 · 네이비/골드 · 모든 금액 ₩ · 총합계 명시 · 결론 1쪽 · 작성자 ${esc(state.settings.author)} · 법령은 법제처 API 조회 기준일 표기. 인쇄 대화상자에서 "PDF로 저장"을 선택하세요. 배경 그래픽 인쇄를 켜면 색상이 유지됩니다.</div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn" onclick="App.exportJson()">케이스 JSON 내보내기</button><button class="btn" onclick="App.syncPush()">PIN 동기화 저장</button></div>`)}`;
   }
   function buildReport(kind) {
@@ -405,7 +427,36 @@ ${st ? kp([['양도차익', fmt(st.now.gain)], ['양도세 사업용', fmt(st.bi
     }
     return body + `<div class="foot">${esc(state.settings.author)} · deal-check · ${today}</div>`;
   }
-  function printReport(kind) { const r = $('#report'); r.innerHTML = buildReport(kind); document.title = `${state.current.name} ${kind === 'buy' ? '매수' : kind === 'sell' ? '매도' : '협상'} 보고서`; setTimeout(() => window.print(), 150); }
+  const REPORT_CSS = `body{margin:0;font-family:'Malgun Gothic','Noto Sans KR',sans-serif;color:#222;font-size:10pt;line-height:1.5;background:#fff}
+.rp .pg{page-break-after:always;padding:0}.rp .pg:last-child{page-break-after:auto}
+.rp .cover{border-top:10px solid #0F2544;border-bottom:3px solid #C6A15B;padding:40mm 0 10mm;min-height:250mm;display:flex;flex-direction:column;justify-content:space-between}
+.rp .cover .k{color:#C6A15B;font-weight:700;letter-spacing:2px;font-size:11pt}.rp .cover h1{font-family:'Noto Serif KR',serif;font-size:24pt;color:#0F2544;margin:8px 0 4px}.rp .cover h2{font-size:13pt;color:#444;font-weight:400;margin:0 0 16px}
+.rp h2.sec{font-size:14pt;color:#fff;background:#0F2544;padding:5px 12px;margin:14px 0 8px;border-left:8px solid #C6A15B}.rp h3{font-size:11pt;color:#0F2544;border-bottom:1.5px solid #C6A15B;padding-bottom:2px;margin:12px 0 6px}
+.rp table{font-size:9pt;margin:4px 0 8px;border-collapse:collapse;width:100%}.rp th{background:#0F2544;color:#fff;padding:4px 6px;border:0;text-align:left}.rp td{padding:4px 6px;border-bottom:1px solid #ddd;vertical-align:top}
+.rp .conc{border-left:6px solid #C6A15B;background:#f6f4ef;padding:8px 12px;margin:6px 0}.rp .conc b{color:#0F2544}.rp .box{border:1px solid #C6A15B;background:#fbf8f1;padding:8px 12px;margin:6px 0}
+.rp .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0}.rp .kpis div{border:1px solid #ddd;padding:6px 8px;border-radius:4px}.rp .kpis div small{display:block;color:#666;font-size:8pt}.rp .kpis div b{font-size:12pt;color:#0F2544}
+.rp .small{font-size:8.5pt;color:#555}.rp .foot{font-size:8pt;color:#777;text-align:center;margin-top:12px}.rp .dec .t{font-family:'Noto Serif KR',serif;font-size:13pt;font-weight:700;color:#0F2544;margin:4px 0}.rp .dec .row{display:flex;gap:8px;margin:3px 0}.rp .dec .no{color:#C6A15B;font-weight:700}
+.rp ul{margin:4px 0 8px 18px;padding:0}
+@page{size:A4;margin:16mm 14mm}
+.toolbar{position:sticky;top:0;background:#0F2544;color:#fff;padding:10px 16px;display:flex;gap:10px;align-items:center;font-size:13px;z-index:9}.toolbar button{height:38px;padding:0 16px;border:0;border-radius:6px;background:#C6A15B;color:#0F2544;font-weight:700;font-family:inherit;cursor:pointer}.toolbar span{opacity:.8}
+@media print{.toolbar{display:none !important}}
+.sheet{max-width:210mm;margin:0 auto;padding:12mm 10mm;background:#fff}`;
+  function reportDocument(kind, html) {
+    const title = `${state.current.name} ${kind === 'buy' ? '매수 검토 보고서' : kind === 'sell' ? '매도 검토 보고서' : '협상 보고서'}`;
+    return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap"><style>${REPORT_CSS}</style></head><body><div class="toolbar"><button onclick="window.print()">PDF 저장 / 인쇄</button><span>${esc(title)} · 인쇄 대화상자에서 "PDF로 저장" 선택 · 배경 그래픽 켜기</span><button onclick="window.close()" style="margin-left:auto;background:#fff">닫기</button></div><div class="sheet rp">${html}</div></body></html>`;
+  }
+  function printReport(kind) {
+    const html = buildReport(kind); if (!html) { toast('보고서를 만들 수 없습니다 — 입력을 확인하세요'); return; }
+    state.reportKind = kind; state.reportHtml = html;
+    // 1) 새 창에 보고서 문서를 열어 인쇄 (화면에서도 내용이 보임)
+    let w = null; try { w = window.open('', '_blank'); } catch (e) { }
+    if (w && w.document) { w.document.open(); w.document.write(reportDocument(kind, html)); w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch (e) { } }, 700); return; }
+    // 2) 팝업 차단 시: 앱 안에서 미리보기로 전환
+    state.tab = 'report'; render(); toast('팝업이 차단되어 미리보기로 표시합니다 — 아래 "PDF 저장" 버튼을 누르세요');
+    const r = $('#report'); r.innerHTML = html; setTimeout(() => window.print(), 300);
+  }
+  function previewReport(kind) { state.reportKind = kind; state.reportHtml = buildReport(kind); render(); const el = $('#preview'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }
+  function downloadReport(kind) { const html = buildReport(kind); const blob = new Blob([reportDocument(kind, html)], { type: 'text/html;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${state.current.name}_${kind === 'buy' ? '매수검토' : kind === 'sell' ? '매도검토' : '협상'}보고서.html`; a.click(); toast('HTML 파일로 저장했습니다 — 브라우저에서 열어 PDF로 인쇄 가능'); }
 
   // ---------- 탭: 설정 ----------
   function renderSettings() {
@@ -414,7 +465,7 @@ ${st ? kp([['양도차익', fmt(st.now.gain)], ['양도세 사업용', fmt(st.bi
     return `<div class="grid g2">
 ${card('동기화 · 서버', `<div class="fgrid g2">${field('deal-check Worker 주소(비밀키 서버)', 'workerUrl', s.workerUrl)}${field('동기화 PIN (4~8자리)', 'pin', s.pin)}</div><div class="muted" style="margin-top:6px">${state.workerOk ? pill('전용 서버 연결됨', 'ok') : pill('전용 서버 미배포 — 아래 공공데이터 설정으로 동작', 'warn')}</div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn sm primary" onclick="App.syncPush()">서버에 저장</button><button class="btn sm" onclick="App.syncPull()">서버에서 불러오기</button><button class="btn sm" onclick="App.ping()">연결 확인</button></div><div class="muted" style="margin-top:8px">같은 PIN을 입력한 모든 기기에서 케이스가 공유됩니다 (Cloudflare KV).</div>`)}
 ${card('공공데이터 연동 (yjjn2005.github.io 전체 앱 공용 설정 — 한 번만 입력)', `<div class="fgrid g2">${field('공공데이터포털 서비스키 (상업업무용·공장창고 실거래, 건축물대장)', 'dataKey', s.dataKey)}${field('범용 프록시 (ynk-data-proxy)', 'proxyUrl', s.proxyUrl)}${field('토지 실거래·브이월드 서버 (land-check-api)', 'landApi', s.landApi)}${field('브이월드 개발키', 'vworldKey', s.vworldKey)}</div><div class="muted" style="margin-top:8px">토지 실거래와 토지이용·공시지가는 기존 land-check-api·브이월드로 키 입력 없이 조회됩니다. 상업업무용·공장창고 실거래와 건축물대장은 공공데이터포털 서비스키(realestate-tax-suite·sinhonjip-app에서 쓰던 키)를 한 번 입력하면 이 기기에 저장되어 ynk-data-proxy로 조회합니다. 이 설정은 공용 저장소(ynk_public_api)에 저장되어 같은 주소(yjjn2005.github.io)의 모든 앱이 함께 씁니다. Worker 비밀값에 키가 등록되면(상태: ${state.workerKeys && state.workerKeys.datagokr ? pill('서버 키 있음', 'ok') : pill('서버 키 없음', 'warn')}) 클라이언트 키 없이 서버가 처리합니다.</div>`)}
-${card('기본 가정값', `<div class="fgrid g3">${field('프리미엄 오피스·빌딩', 'premium.income', s.premium.income, 'pct')}${field('프리미엄 상가·물류·공장', 'premium.retail', s.premium.retail, 'pct')}${field('프리미엄 토지(요구 상승률)', 'premium.land', s.premium.land, 'pct')}${field('자기자본 프리미엄(Re)', 'equityPremium', s.equityPremium, 'pct')}${field('ZOPA 가중치(매수자 우위)', 'zopaWeight', s.zopaWeight, 'num')}${field('DSCR 최소 기준', 'dscrMin', s.dscrMin, 'num')}${field('보고서 작성자', 'author', s.author)}</div>`)}
+${card('기본 가정값', `<div class="fgrid g3">${field('프리미엄 오피스·빌딩', 'premium.income', s.premium.income, 'pct')}${field('프리미엄 상가·물류·공장', 'premium.retail', s.premium.retail, 'pct')}${field('프리미엄 토지(요구 상승률)', 'premium.land', s.premium.land, 'pct')}${field('자기자본 프리미엄(Re)', 'equityPremium', s.equityPremium, 'pct')}${field('ZOPA 가중치(매수자 우위)', 'zopaWeight', s.zopaWeight, 'num')}${field('매도 희망가 가산율(호가 대비)', 'hopeMarkup', s.hopeMarkup ?? 0.20, 'pct')}${field('DSCR 최소 기준', 'dscrMin', s.dscrMin, 'num')}${field('보고서 작성자', 'author', s.author)}</div>`)}
 </div>
 ${card('케이스 관리', `<table><thead><tr><th></th><th>이름</th><th>유형</th><th>호가</th><th>생성</th><th></th></tr></thead><tbody>${list}</tbody></table><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.newCase()">새 물건 입력</button><button class="btn sm" onclick="App.exportJson()">JSON 내보내기</button><label class="btn sm" for="imp">JSON 가져오기</label><input id="imp" type="file" accept="application/json" style="display:none"><button class="btn sm" onclick="App.loadSample()">예시 케이스 다시 만들기</button></div>`)}
 ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)', `<div style="display:flex;gap:6px;flex-wrap:wrap">${laws.map(l => `<button class="btn sm chip" onclick="App.law('${l[0]}','${l[1]}')">${l[0]} §${l[1]}</button>`).join('')}</div><div id="lawbox" style="margin-top:12px;font-size:12.5px;white-space:pre-wrap;max-height:360px;overflow:auto;background:var(--ivory);border-radius:8px;padding:12px">${esc(state.lawText || '조문 버튼을 누르면 현행 원문과 시행일자를 표시합니다. 앱 내 세율 파라미터 기준일: ' + C.LAW.asOf)}</div>`)}`;
@@ -466,6 +517,7 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     const top = all.slice(0, 60); top.forEach((x, i) => { x.use = i < 15 && (!dong || x.addr.includes(dong)) && floorOk(x); });
     if (!top.some(x => x.use)) top.slice(0, 10).forEach(x => x.use = true);
     c.comps = c.comps.filter(x => !x.auto).concat(top);
+    applyPriceDefaults(c);
     state.rtmsStatus = all.length ? `${all.length}건 수신 (상위 ${top.length}건 표시, 같은 읍면동·용도지역 우선 채택)` : '0건 — ' + lastErr;
     save(); render(); toast(state.rtmsStatus);
   }
@@ -557,7 +609,9 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     loadSample() { const c = sampleCase(); state.cases.push(c); state.current = c; save(); render(); },
     exportJson() { const b = new Blob([JSON.stringify(state.current, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = state.current.name + '.json'; a.click(); },
     extractPaste() { const t = $('#paste').value; if (!t) { toast('텍스트를 붙여넣으세요'); return; } applyExtract(extractFromText(t), '붙여넣기', '텍스트 분석'); },
-    extractAI, fetchStats, fetchRtms, lookupLand, fetchBldg, autoCollect, law, syncPush, syncPull, ping, printReport, evaluate, state, calc: C
+    setAskFromComps() { const c = state.current; if (!applyPriceDefaults(c, 'ask')) { toast('채택된 실거래 사례가 없습니다 — 시장 탭에서 실거래를 먼저 조회하세요'); return; } applyPriceDefaults(c, 'hope'); save(); render(); toast('호가를 최근 거래 최고가로 설정: ' + fmt(c.ask)); },
+    setHopeFromAsk() { const c = state.current; if (!c.ask) { toast('호가를 먼저 입력하세요'); return; } applyPriceDefaults(c, 'hope'); save(); render(); },
+    extractAI, fetchStats, fetchRtms, lookupLand, fetchBldg, autoCollect, law, syncPush, syncPull, ping, printReport, previewReport, downloadReport, evaluate, state, calc: C
   };
   load(); const h = location.hash.replace('#', ''); if (NAV.some(n => n[0] === h)) state.tab = h; render(); checkWorker().then(() => { if (state.tab === 'settings' || state.tab === 'market') render(); });
 })();
