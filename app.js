@@ -51,6 +51,22 @@
     const old = Object.fromEntries((c.risks || []).map(r => [r.key, r]));
     c.risks = tpl.map(r => Object.assign({ status: 'na', deduct: 0, rate: 0, memo: '' }, r, old[r.key] ? { status: old[r.key].status, deduct: old[r.key].deduct, rate: old[r.key].rate, memo: old[r.key].memo } : {}));
   }
+  function wulsanCase() {
+    const c = newCase({ name: '월산리 20-5 (나대지·노외주차장)', type: 'vacant', address: '경기도 남양주시 화도읍 월산리 20-5', pnu: '4136025627100200005', lawd: '41360', zone: '제1종일반주거지역', jimok: '대', landArea: 1040, publicPricePerSqm: 1132000, landPublic: 1132000 * 1040, priceYear: '2026', far: 2.0, bcr: 0.6,
+      ask: 0, sellerHope: 0, buyerHope: 0, landGrowth: 0.02, holdYearsPlan: 5,
+      seller: { ownerType: 'indiv', acquired: '', acquiredPrice: 0, expenses: 0, targetNet: 0, transfer: '2026-12-15', bizPeriods: [{ from: '2017-08-01', to: '2099-12-31', type: '노외주차장(주차장운영업)' }], share: 1, sellCostRate: 0.009, vat: 0 },
+      notes: '브이월드 2026 토지특성: 지목 대, 1,040㎡, 제1종일반주거지역, 주상용, 광대로한면, 사다리형, 개별공시지가 ₩1,132,000/㎡(2026). 토지이용: 지구단위계획구역·토지거래계약허가구역·자연보전권역·수질보전특별대책지역·배출시설설치제한지역. 현황 노외주차장(대현로지스 임대).' });
+    c.risks.forEach(r => {
+      if (r.key === 'landuse') { r.status = 'warn'; r.memo = '제1종일반주거(건폐율 60%·용적률 200% 상한) · 지구단위계획구역 · 토지거래계약허가구역(허가 필요) · 자연보전권역·수질보전특별대책지역'; }
+      if (r.key === 'road') { r.status = 'ok'; r.memo = '광대로한면 접도 · 사다리형 · 평지'; }
+      if (r.key === 'zone') { r.status = 'warn'; r.memo = '지구단위계획구역 — 계획 내용(용도·높이·건축선) 확인 필요 · 자연보전권역(수도권정비계획법) 규모 제한'; }
+      if (r.key === 'farmsurvey') { r.status = 'na'; r.memo = '지목 대 — 해당 없음'; }
+      if (r.key === 'share') { r.status = 'ok'; r.memo = '단독 소유 전제(등기부 확인)'; }
+      if (r.key === 'registry') { r.status = 'na'; r.memo = '등기부 업로드·확인'; }
+      if (r.key === 'access') { r.status = 'ok'; r.memo = '광대로 직접 접함 — 점용허가 불필요'; }
+    });
+    return c;
+  }
   function sampleCase() {
     const c = newCase({ name: '월산리 근생빌딩 (예시)', type: 'retail', address: '경기도 남양주시 화도읍 월산리 20-5', pnu: '4136025627100200005', lawd: '41360', zone: '제1종일반주거지역', landArea: 495, gfa: 1180.4, builtYear: '2009', floors: '지상 5층', parking: '8대', elevator: '1대',
       rentroll: [{ floor: '1층', tenant: '카페', deposit: 80000000, rent: 6000000, mgmt: 300000, expiry: '2027-06', vacant: false }, { floor: '2층', tenant: '치과', deposit: 60000000, rent: 4500000, mgmt: 250000, expiry: '2028-02', vacant: false }, { floor: '3층', tenant: '학원', deposit: 40000000, rent: 3000000, mgmt: 200000, expiry: '2026-12', vacant: false }, { floor: '4층', tenant: '공실', deposit: 0, rent: 2500000, mgmt: 0, expiry: '', vacant: true }, { floor: '5층', tenant: '사무실', deposit: 20000000, rent: 1500000, mgmt: 150000, expiry: '2027-09', vacant: false }],
@@ -66,7 +82,7 @@
   function load() {
     try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); ['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].forEach(k => { if (sh[k]) state.settings[k] = sh[k]; }); } catch (e) { }
     try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); if (d) { state.cases = d.cases || []; state.settings = Object.assign(state.settings, d.settings || {}); state.side = d.side || 'buy'; state.current = state.cases.find(c => c.id === d.currentId) || state.cases[0] || null; } } catch (e) { }
-    if (!state.current) { state.current = sampleCase(); state.cases = [state.current]; }
+    if (!state.current) { state.current = wulsanCase(); state.cases = [state.current, sampleCase()]; }
     state.cases.forEach(c => { if (!c.market) c.market = Object.assign({}, MARKET_DEFAULT); if (!c.seller) c.seller = newCase().seller; initRisks(c); });
   }
 
@@ -119,8 +135,8 @@
   }
 
   function recentHighPrice(c) {
-    const used = (c.comps || []).filter(x => x.use !== false && x.price > 0); if (!used.length) return null;
-    const t = C.TYPES[c.type] || C.TYPES.retail;
+    const t = C.TYPES[c.type] || C.TYPES.retail; const subj = t.land ? (c.landArea || 0) : (c.saleScope === 'part' ? (c.exclusiveArea || 0) : (c.landArea || 0));
+    const used = (c.comps || []).filter(x => x.use !== false && x.price > 0 && !/도로|구거|하천/.test(x.type || '') && (!subj || ((t.income && c.saleScope === 'part' ? (x.bldgArea || x.area) : x.area) >= Math.max(30, subj * 0.1)))); if (!used.length) return null;
     if (t.income && c.saleScope === 'part' && c.exclusiveArea) { const u = used.filter(x => x.pricePerSqmBldg > 0); if (!u.length) return null; const top = u.reduce((m, x) => x.pricePerSqmBldg > m.pricePerSqmBldg ? x : m, u[0]); return { price: Math.round(top.pricePerSqmBldg * c.exclusiveArea), basis: `최근 거래 최고 전용단가 ${fmt(top.pricePerSqmBldg)}/㎡ (${top.addr} ${top.date}) × ${c.exclusiveArea}㎡`, ref: top }; }
     const area = c.landArea || 0; if (!area) return null; const u = used.filter(x => x.pricePerSqm > 0); if (!u.length) return null; const top = u.reduce((m, x) => x.pricePerSqm > m.pricePerSqm ? x : m, u[0]);
     return { price: Math.round(top.pricePerSqm * area), basis: `최근 거래 최고 토지단가 ${fmt(top.pricePerSqm)}/㎡ (${top.addr} ${top.date}) × ${area}㎡`, ref: top };
@@ -467,7 +483,7 @@ ${card('동기화 · 서버', `<div class="fgrid g2">${field('deal-check Worker 
 ${card('공공데이터 연동 (yjjn2005.github.io 전체 앱 공용 설정 — 한 번만 입력)', `<div class="fgrid g2">${field('공공데이터포털 서비스키 (상업업무용·공장창고 실거래, 건축물대장)', 'dataKey', s.dataKey)}${field('범용 프록시 (ynk-data-proxy)', 'proxyUrl', s.proxyUrl)}${field('토지 실거래·브이월드 서버 (land-check-api)', 'landApi', s.landApi)}${field('브이월드 개발키', 'vworldKey', s.vworldKey)}</div><div class="muted" style="margin-top:8px">토지 실거래와 토지이용·공시지가는 기존 land-check-api·브이월드로 키 입력 없이 조회됩니다. 상업업무용·공장창고 실거래와 건축물대장은 공공데이터포털 서비스키(realestate-tax-suite·sinhonjip-app에서 쓰던 키)를 한 번 입력하면 이 기기에 저장되어 ynk-data-proxy로 조회합니다. 이 설정은 공용 저장소(ynk_public_api)에 저장되어 같은 주소(yjjn2005.github.io)의 모든 앱이 함께 씁니다. Worker 비밀값에 키가 등록되면(상태: ${state.workerKeys && state.workerKeys.datagokr ? pill('서버 키 있음', 'ok') : pill('서버 키 없음', 'warn')}) 클라이언트 키 없이 서버가 처리합니다.</div>`)}
 ${card('기본 가정값', `<div class="fgrid g3">${field('프리미엄 오피스·빌딩', 'premium.income', s.premium.income, 'pct')}${field('프리미엄 상가·물류·공장', 'premium.retail', s.premium.retail, 'pct')}${field('프리미엄 토지(요구 상승률)', 'premium.land', s.premium.land, 'pct')}${field('자기자본 프리미엄(Re)', 'equityPremium', s.equityPremium, 'pct')}${field('ZOPA 가중치(매수자 우위)', 'zopaWeight', s.zopaWeight, 'num')}${field('매도 희망가 가산율(호가 대비)', 'hopeMarkup', s.hopeMarkup ?? 0.20, 'pct')}${field('DSCR 최소 기준', 'dscrMin', s.dscrMin, 'num')}${field('보고서 작성자', 'author', s.author)}</div>`)}
 </div>
-${card('케이스 관리', `<table><thead><tr><th></th><th>이름</th><th>유형</th><th>호가</th><th>생성</th><th></th></tr></thead><tbody>${list}</tbody></table><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.newCase()">새 물건 입력</button><button class="btn sm" onclick="App.exportJson()">JSON 내보내기</button><label class="btn sm" for="imp">JSON 가져오기</label><input id="imp" type="file" accept="application/json" style="display:none"><button class="btn sm" onclick="App.loadSample()">예시 케이스 다시 만들기</button></div>`)}
+${card('케이스 관리', `<table><thead><tr><th></th><th>이름</th><th>유형</th><th>호가</th><th>생성</th><th></th></tr></thead><tbody>${list}</tbody></table><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.newCase()">새 물건 입력</button><button class="btn sm" onclick="App.exportJson()">JSON 내보내기</button><label class="btn sm" for="imp">JSON 가져오기</label><input id="imp" type="file" accept="application/json" style="display:none"><button class="btn sm" onclick="App.loadWulsan()">월산리 20-5 케이스 만들기</button><button class="btn sm" onclick="App.loadSample()">근생빌딩 예시 만들기</button></div>`)}
 ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)', `<div style="display:flex;gap:6px;flex-wrap:wrap">${laws.map(l => `<button class="btn sm chip" onclick="App.law('${l[0]}','${l[1]}')">${l[0]} §${l[1]}</button>`).join('')}</div><div id="lawbox" style="margin-top:12px;font-size:12.5px;white-space:pre-wrap;max-height:360px;overflow:auto;background:var(--ivory);border-radius:8px;padding:12px">${esc(state.lawText || '조문 버튼을 누르면 현행 원문과 시행일자를 표시합니다. 앱 내 세율 파라미터 기준일: ' + C.LAW.asOf)}</div>`)}`;
   }
   function afterSettings(root) { bindInputs(root, state.settings, k => { renderSide(); if (['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].includes(k)) { try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); sh[k] = state.settings[k]; localStorage.setItem('ynk_public_api', JSON.stringify(sh)); } catch (e) { } } }); const imp = root.querySelector('#imp'); if (imp) imp.addEventListener('change', async () => { try { const j = JSON.parse(await imp.files[0].text()); const arr = Array.isArray(j) ? j : [j]; arr.forEach(c => { c.id = 'c' + Date.now() + Math.random().toString(36).slice(2, 6); initRisks(c); state.cases.push(c); }); state.current = state.cases[state.cases.length - 1]; save(); render(); toast('가져오기 완료'); } catch (e) { toast('JSON 오류'); } }); }
@@ -512,13 +528,18 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     const dong = (c.address.match(/([가-힣]+(?:읍|면|동|리))/g) || []).pop() || '';
     const fm = (c.scopeNote || '').match(/(\d+)\s*[~∼-]?\s*(\d+)?\s*층/); const tf = fm ? parseInt(fm[1], 10) : 0; const fl = x => parseInt(String(x.floor || '').replace(/[^\d-]/g, ''), 10);
     const floorOk = x => { if (c.saleScope !== 'part' || !tf) return true; const f = fl(x); if (isNaN(f)) return tf < 3; return tf >= 3 ? f >= 3 : f <= 2; };
-    const sc = x => (x.addr.includes(dong) ? 2 : 0) + (c.zone && x.type.includes(c.zone.replace('지역', '')) ? 1 : 0) + (c.saleScope === 'part' ? (x.type.includes('집합') ? 2 : 0) + (floorOk(x) ? 2 : -3) : (x.type.includes('일반') ? 1 : 0));
+    const subjArea = C.TYPES[c.type].land ? (c.landArea || 0) : (c.saleScope === 'part' ? (c.exclusiveArea || 0) : (c.landArea || 0));
+    const minArea = Math.max(30, subjArea * 0.1), maxArea = subjArea ? subjArea * 10 : Infinity;
+    const sizeOk = x => { const ar = (C.TYPES[c.type].income && c.saleScope === 'part') ? (x.bldgArea || x.area) : x.area; return !ar || (ar >= minArea && ar <= maxArea); };
+    const jimokOk = x => !/도로|구거|하천|제방|묘지|유지/.test(x.type || '');
+    const jimokSame = x => c.jimok ? (x.type || '').startsWith(c.jimok) : true;
+    const sc = x => (sizeOk(x) ? 0 : -5) + (jimokOk(x) ? 0 : -9) + (jimokSame(x) ? 1 : 0) + (x.addr.includes(dong) ? 2 : 0) + (c.zone && x.type.includes(c.zone.replace('지역', '')) ? 1 : 0) + (c.saleScope === 'part' ? (x.type.includes('집합') ? 2 : 0) + (floorOk(x) ? 2 : -3) : (x.type.includes('일반') ? 1 : 0));
     all.sort((a, b) => sc(b) - sc(a) || (b.date > a.date ? 1 : -1));
-    const top = all.slice(0, 60); top.forEach((x, i) => { x.use = i < 15 && (!dong || x.addr.includes(dong)) && floorOk(x); });
+    const top = all.slice(0, 60); top.forEach((x, i) => { x.use = i < 15 && (!dong || x.addr.includes(dong)) && floorOk(x) && sizeOk(x) && jimokOk(x); });
     if (!top.some(x => x.use)) top.slice(0, 10).forEach(x => x.use = true);
     c.comps = c.comps.filter(x => !x.auto).concat(top);
     applyPriceDefaults(c);
-    state.rtmsStatus = all.length ? `${all.length}건 수신 (상위 ${top.length}건 표시, 같은 읍면동·용도지역 우선 채택)` : '0건 — ' + lastErr;
+    state.rtmsStatus = all.length ? `${all.length}건 수신 (상위 ${top.length}건 표시, 같은 읍면동·용도지역·유사 규모(${Math.round(minArea)}~${isFinite(maxArea) ? Math.round(maxArea) : '∞'}㎡) 우선 채택, 도로·구거 제외)` : '0건 — ' + lastErr;
     save(); render(); toast(state.rtmsStatus);
   }
   function jsonp(url, params, ms) { return new Promise((res, rej) => { const cb = 'vw' + Math.random().toString(36).slice(2); const sc = document.createElement('script'); const t = setTimeout(() => { cleanup(); rej(new Error('timeout')); }, ms || 10000); function cleanup() { clearTimeout(t); delete window[cb]; sc.remove(); } window[cb] = d => { cleanup(); res(d); }; sc.src = url + '?' + new URLSearchParams(Object.assign({}, params, { callback: cb })).toString(); sc.onerror = () => { cleanup(); rej(new Error('script error')); }; document.head.appendChild(sc); }); }
@@ -607,6 +628,7 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     dupCase(id) { const src = state.cases.find(c => c.id === id); const c = JSON.parse(JSON.stringify(src)); c.id = 'c' + Date.now(); c.name = src.name + ' (복사)'; state.cases.push(c); state.current = c; save(); render(); },
     delCase(id) { if (state.cases.length <= 1) { toast('마지막 케이스는 삭제할 수 없습니다'); return; } if (!confirm('이 케이스를 삭제할까요?')) return; state.cases = state.cases.filter(c => c.id !== id); if (state.current.id === id) state.current = state.cases[0]; save(); render(); },
     loadSample() { const c = sampleCase(); state.cases.push(c); state.current = c; save(); render(); },
+    loadWulsan() { const c = wulsanCase(); state.cases.push(c); state.current = c; state.tab = 'input'; save(); render(); toast('월산리 20-5 — 시장 탭에서 실거래 조회를 누르면 호가가 자동 설정됩니다'); },
     exportJson() { const b = new Blob([JSON.stringify(state.current, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = state.current.name + '.json'; a.click(); },
     extractPaste() { const t = $('#paste').value; if (!t) { toast('텍스트를 붙여넣으세요'); return; } applyExtract(extractFromText(t), '붙여넣기', '텍스트 분석'); },
     setAskFromComps() { const c = state.current; if (!applyPriceDefaults(c, 'ask')) { toast('채택된 실거래 사례가 없습니다 — 시장 탭에서 실거래를 먼저 조회하세요'); return; } applyPriceDefaults(c, 'hope'); save(); render(); toast('호가를 최근 거래 최고가로 설정: ' + fmt(c.ask)); },
