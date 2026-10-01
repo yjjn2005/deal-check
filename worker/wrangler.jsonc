@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": { "ALLOWED_ORIGIN": "https://yjjn2005.github.io,http://localhost:8080,http://127.0.0.1:8080", "LAW_OC": "yjjn2005", "CLAUDE_MODEL": "claude-sonnet-4-5" },
   "kv_namespaces": [
-    { "binding": "DEAL_CHECK_SYNC", "id": "REPLACE_WITH_KV_ID_SYNC" },
-    { "binding": "DEAL_CHECK_CACHE", "id": "REPLACE_WITH_KV_ID_CACHE" }
+    { "binding": "DEAL_CHECK_SYNC", "id": "07a319692c7b437a8a1ea90a9e562285" },
+    { "binding": "DEAL_CHECK_CACHE", "id": "f8a461aed2a843feb96fc7acdb7e59ab" }
   ]
 }
