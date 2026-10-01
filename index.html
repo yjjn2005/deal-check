@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230F2544%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-size=%2718%27 text-anchor=%27middle%27 fill=%27%23C6A15B%27 font-family=%27serif%27 font-weight=%27700%27%3Ed%3C/text%3E%3C/svg%3E">
+<title>deal-check · 부동산 매매 검토</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+:root{--navy:#0F2544;--gold:#C6A15B;--ivory:#F7F4EE;--ink:#1B1B1B;--muted:#5F5B55;--line:#E3DED4;--panel:#fff;--green:#2E6B4A;--amber:#9A5B12;--red:#9E3434;--blue:#5F7FA8}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ivory);color:var(--ink);font-family:'Noto Sans KR','Malgun Gothic',sans-serif;font-size:14px;line-height:1.5}
+a{color:var(--navy);text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
+.app{display:flex;min-height:100vh}
+.side{width:248px;flex-shrink:0;background:var(--navy);color:#fff;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{padding:26px 24px 18px;border-bottom:1px solid rgba(255,255,255,.12)}
+.logo b{font-family:'Noto Serif KR',serif;font-size:24px;font-weight:700;letter-spacing:.5px}
+.logo b i{color:var(--gold);font-style:normal}
+.logo small{display:block;font-size:11px;opacity:.7;margin-top:4px;letter-spacing:1px}
+.sidebox{padding:16px 24px 8px}
+.sidebox .lbl{font-size:11px;letter-spacing:1px;opacity:.65;margin-bottom:8px}
+.seg{display:flex;background:rgba(255,255,255,.08);border-radius:8px;padding:3px}
+.seg button{flex:1;height:38px;border:0;border-radius:6px;background:transparent;color:#fff;font-size:13px}
+.seg button.on{background:var(--gold);color:var(--navy);font-weight:700}
+nav.steps{display:flex;flex-direction:column;padding:8px 0;flex-grow:1;overflow:auto}
+nav.steps a{display:flex;align-items:center;gap:12px;padding:11px 18px 11px 21px;border-left:3px solid transparent;color:rgba(255,255,255,.72);min-height:48px}
+nav.steps a.on{background:rgba(198,161,91,.16);border-left-color:var(--gold);color:#fff}
+nav.steps a .n{width:22px;height:22px;border:1px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--gold);font-weight:700;flex-shrink:0}
+nav.steps a .t{display:flex;flex-direction:column}
+nav.steps a .t b{font-size:14px;font-weight:500}
+nav.steps a .t small{font-size:11px;opacity:.7}
+.sidefoot{padding:16px 24px;border-top:1px solid rgba(255,255,255,.12);font-size:12px}
+.sidefoot .lbl{font-size:11px;opacity:.65;letter-spacing:1px}
+.sidefoot b{display:block;font-weight:500;margin-top:4px}
+.sidefoot small{opacity:.7}
+main{flex-grow:1;min-width:0;display:flex;flex-direction:column}
+header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:24px 36px 16px;border-bottom:1px solid var(--line);background:var(--ivory);position:sticky;top:0;z-index:5}
+header.top .step{font-size:12px;color:var(--gold);letter-spacing:1.5px;font-weight:500}
+header.top h1{margin:2px 0;font-family:'Noto Serif KR',serif;font-size:24px;font-weight:700;color:var(--navy)}
+header.top .sub{font-size:13px;color:var(--muted)}
+header.top .acts{display:flex;gap:10px;align-items:center;flex-shrink:0}
+.btn{height:42px;padding:0 18px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:13px;color:var(--ink);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);font-weight:500}
+.btn.gold{background:var(--gold);color:var(--navy);border-color:var(--gold);font-weight:700}
+.btn.sm{height:34px;padding:0 12px;font-size:12.5px}
+.btn.chip{height:36px;border-radius:999px}
+.btn.chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.content{padding:24px 36px 48px;display:flex;flex-direction:column;gap:18px}
+.grid{display:grid;gap:18px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.g57{grid-template-columns:5fr 7fr}.g75{grid-template-columns:7fr 5fr}.g84{grid-template-columns:8fr 4fr}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.card h3{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--navy);letter-spacing:.3px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card h3 .r{font-weight:400;color:var(--muted);font-size:12px}
+.hero{background:var(--navy);color:#fff;border-radius:14px;padding:24px 28px;display:flex;flex-direction:column;gap:10px}
+.hero .k{font-size:12px;letter-spacing:1.5px;color:var(--gold)}
+.hero .v{font-family:'Noto Serif KR',serif;font-size:40px;font-weight:700;line-height:1.1}
+.hero .d{font-size:13px;opacity:.85}
+.hero .d b{color:var(--gold)}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .v{font-family:'Noto Serif KR',serif;font-size:21px;font-weight:700;color:var(--navy);overflow-wrap:anywhere}
+.kpi .n{font-size:11.5px;color:var(--muted)}
+.kpi.warn .v{color:var(--amber)}.kpi.ok .v{color:var(--green)}.kpi.bad .v{color:var(--red)}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.pill.ok{background:#E3EFE7;color:var(--green)}.pill.warn{background:#F6E9D3;color:var(--amber)}.pill.bad{background:#F3DEDE;color:var(--red)}.pill.info{background:#E6EBF3;color:var(--navy)}.pill.na{background:#eee;color:#777}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12px;padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+td.r,th.r{text-align:right}
+tr.total td{font-weight:700;background:#eef2f8}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11px;color:var(--muted)}
+.field input,.field select,.field textarea{height:38px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff;width:100%}
+.field textarea{height:auto;padding:8px 10px}
+.field input[type=range]{padding:0;height:28px;accent-color:var(--gold);border:0}
+.fgrid{display:grid;gap:10px 14px}
+td input,td select{height:32px;border:1px solid var(--line);border-radius:6px;padding:0 8px;width:100%;background:#fff}
+td input[type=checkbox]{width:16px;height:16px;accent-color:var(--navy)}
+.drop{border:1.5px dashed var(--gold);border-radius:10px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;background:var(--ivory)}
+.drop .ic{width:48px;height:48px;border-radius:50%;background:var(--navy);color:var(--gold);display:flex;align-items:center;justify-content:center}
+.dec{display:flex;flex-direction:column;gap:10px;font-size:13px}
+.dec .t{font-family:'Noto Serif KR',serif;font-size:17px;font-weight:700;color:var(--navy)}
+.dec .row{display:flex;gap:10px;align-items:flex-start}
+.dec .row .no{color:var(--gold);font-weight:700;flex-shrink:0}
+.bars{display:flex;gap:8px;align-items:flex-end;height:140px;padding:4px 0 10px}
+.bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.bars .b .s{width:100%;display:flex;align-items:flex-end;gap:3px;flex-grow:1}
+.bars .b .s i{flex:1;border-radius:3px 3px 0 0;display:block}
+.bars .b small{font-size:11px;color:var(--muted)}
+.heat{display:grid;grid-template-columns:56px repeat(4,minmax(0,1fr));gap:6px}
+.heat div{border-radius:6px;padding:9px 4px;text-align:center;font-size:12px}
+.heat .h{color:var(--muted);background:transparent}
+.axis{position:relative;height:160px;margin:10px 12px 0}
+.axis .bar{position:absolute;left:0;right:0;top:70px;height:12px;background:var(--line);border-radius:6px}
+.axis .zone{position:absolute;top:64px;height:24px;border-radius:6px}
+.axis .mk{position:absolute;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;width:120px;text-align:center;font-size:11px;color:var(--muted)}
+.axis .mk b{font-size:13px}
+.axis .tick{position:absolute;top:62px;width:2px;height:28px;transform:translateX(-50%)}
+.notice{padding:12px 14px;border-radius:10px;font-size:13px}
+.notice.bad{background:#F3DEDE;color:var(--red)}.notice.ok{background:#E3EFE7;color:var(--green)}.notice.info{background:#E6EBF3;color:var(--navy)}.notice.warn{background:#F6E9D3;color:var(--amber)}
+.muted{color:var(--muted);font-size:12px}
+.big{font-family:'Noto Serif KR',serif;font-size:56px;font-weight:700;line-height:1}
+.risk{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.risk .tt{flex-grow:1}
+.risk .tt b{font-weight:500;font-size:13px;display:block}
+.risk .tt small{color:var(--muted);font-size:11.5px}
+.risk select{height:32px;border:1px solid var(--line);border-radius:6px;padding:0 6px;background:#fff}
+.risk input{height:32px;width:130px;border:1px solid var(--line);border-radius:6px;padding:0 8px;text-align:right}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:50;display:none}
+.outline{display:flex;flex-direction:column}
+.outline .it{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.outline .it .n{width:26px;height:26px;border-radius:50%;background:var(--navy);color:var(--gold);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.outline .it b{font-weight:500;font-size:13px;display:block}
+.outline .it small{color:var(--muted);font-size:11.5px}
+.menu-btn{display:none}
+@media (max-width:980px){
+ .app{flex-direction:column}
+ .side{width:100%;height:auto;position:static}
+ nav.steps{flex-direction:row;overflow-x:auto;padding:4px 8px}
+ nav.steps a{border-left:0;border-bottom:3px solid transparent;padding:8px 10px;min-width:120px}
+ nav.steps a.on{border-bottom-color:var(--gold)}
+ .sidefoot{display:none}
+ header.top{position:static;padding:18px 16px 12px;flex-direction:column}
+ .content{padding:16px}
+ .g2,.g3,.g4,.g5,.g57,.g75,.g84{grid-template-columns:1fr}
+ .hero .v{font-size:30px}
+ .axis .mk{width:84px;font-size:10px} .axis .mk b{font-size:11.5px}
+}
+/* ---------- 보고서(인쇄) ---------- */
+#report{display:none}
+.rp{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;color:#222;font-size:10pt;line-height:1.5}
+.rp .pg{page-break-after:always;padding:0}
+.rp .pg:last-child{page-break-after:auto}
+.rp .cover{border-top:10px solid var(--navy);border-bottom:3px solid var(--gold);padding:40mm 0 10mm;min-height:250mm;display:flex;flex-direction:column;justify-content:space-between}
+.rp .cover .k{color:var(--gold);font-weight:700;letter-spacing:2px;font-size:11pt}
+.rp .cover h1{font-family:'Noto Serif KR',serif;font-size:24pt;color:var(--navy);margin:8px 0 4px}
+.rp .cover h2{font-size:13pt;color:#444;font-weight:400;margin:0 0 16px}
+.rp h2.sec{font-size:14pt;color:#fff;background:var(--navy);padding:5px 12px;margin:14px 0 8px;border-left:8px solid var(--gold)}
+.rp h3{font-size:11pt;color:var(--navy);border-bottom:1.5px solid var(--gold);padding-bottom:2px;margin:12px 0 6px}
+.rp table{font-size:9pt;margin:4px 0 8px}
+.rp th{background:var(--navy);color:#fff;padding:4px 6px;border:0}
+.rp td{padding:4px 6px;border-bottom:1px solid #ddd}
+.rp .conc{border-left:6px solid var(--gold);background:#f6f4ef;padding:8px 12px;margin:6px 0}
+.rp .conc b{color:var(--navy)}
+.rp .box{border:1px solid var(--gold);background:#fbf8f1;padding:8px 12px;margin:6px 0}
+.rp .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0}
+.rp .kpis div{border:1px solid #ddd;padding:6px 8px;border-radius:4px}
+.rp .kpis div small{display:block;color:#666;font-size:8pt}
+.rp .kpis div b{font-size:12pt;color:var(--navy)}
+.rp .small{font-size:8.5pt;color:#555}
+.rp .foot{font-size:8pt;color:#777;text-align:center;margin-top:12px}
+@page{size:A4;margin:16mm 14mm}
+@media print{
+ body{background:#fff}
+ .app{display:none !important}
+ #report{display:block !important}
+ .toast{display:none !important}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="logo"><b>deal<i>·</i>check</b><small>부동산 매매 검토 · 가치평가</small></div>
+    <div class="sidebox"><div class="lbl">검토 입장</div>
+      <div class="seg"><button id="side-buy" class="on" onclick="App.setSide('buy')">매수자</button><button id="side-sell" onclick="App.setSide('sell')">매도자</button></div>
+    </div>
+    <nav class="steps" id="nav"></nav>
+    <div class="sidefoot"><div class="lbl">현재 케이스</div><b id="case-name">—</b><small id="case-meta"></small></div>
+  </aside>
+  <main>
+    <header class="top">
+      <div><div class="step" id="h-step"></div><h1 id="h-title"></h1><div class="sub" id="h-sub"></div></div>
+      <div class="acts" id="h-acts"></div>
+    </header>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+<div id="report" class="rp"></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="calc.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

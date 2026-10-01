@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/configuration/schema.json",
+  "name": "deal-check-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": { "ALLOWED_ORIGIN": "https://yjjn2005.github.io,http://localhost:8080,http://127.0.0.1:8080", "LAW_OC": "yjjn2005", "CLAUDE_MODEL": "claude-sonnet-4-5" },
+  "kv_namespaces": [
+    { "binding": "DEAL_CHECK_SYNC", "id": "REPLACE_WITH_KV_ID_SYNC" },
+    { "binding": "DEAL_CHECK_CACHE", "id": "REPLACE_WITH_KV_ID_CACHE" }
+  ]
+}
