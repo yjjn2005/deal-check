@@ -3,7 +3,7 @@
  * 비밀값(wrangler secret): ANTHROPIC_API_KEY, DATA_GO_KR_KEY, ECOS_KEY, LAW_OC, VWORLD_KEY, ALPHAVANTAGE_KEY
  * KV: DEAL_CHECK_SYNC (케이스 동기화), DEAL_CHECK_CACHE (API 캐시)
  */
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const json = (o, status, extra) => new Response(JSON.stringify(o), { status: status || 200, headers: Object.assign({ 'content-type': 'application/json; charset=utf-8' }, extra || {}) });
 
 function cors(req, env) {
@@ -87,6 +87,27 @@ async function stats(env) {
   });
 }
 
+// ---------- 공공데이터포털 범용 (서비스키 주입) ----------
+const DATA_HOSTS = ['apis.data.go.kr', 'api.odcloud.kr', 'www.data.go.kr'];
+async function dataGo(env, url) {
+  let u; try { u = new URL(url); } catch (e) { return new Response('{"error":"bad url"}', { status: 400 }); }
+  if (!DATA_HOSTS.includes(u.hostname)) return new Response('{"error":"host not allowed"}', { status: 403 });
+  if (!env.DATA_GO_KR_KEY) return new Response('{"error":"DATA_GO_KR_KEY 미설정"}', { status: 500 });
+  u.searchParams.delete('serviceKey');
+  const target = u.toString() + (u.search ? '&' : '?') + 'serviceKey=' + encodeURIComponent(env.DATA_GO_KR_KEY);
+  const key = 'data:' + target.replace(/serviceKey=[^&]+/, '');
+  if (env.DEAL_CHECK_CACHE) { const hit = await env.DEAL_CHECK_CACHE.get(key); if (hit) return new Response(hit, { headers: { 'content-type': 'text/plain; charset=utf-8', 'x-cache': 'hit' } }); }
+  const r = await fetch(target, { headers: { 'User-Agent': 'Mozilla/5.0 ynk-public-api' } }); const txt = await r.text();
+  if (r.ok && env.DEAL_CHECK_CACHE && /<item>|"items"/.test(txt)) await env.DEAL_CHECK_CACHE.put(key, txt, { expirationTtl: 21600 });
+  return new Response(txt, { status: r.status, headers: { 'content-type': (r.headers.get('content-type') || 'text/plain') + '; charset=utf-8' } });
+}
+async function ecosRoute(env, code, item, period, start, end) {
+  if (!env.ECOS_KEY) return { error: 'ECOS_KEY 미설정' };
+  const d = new Date(); const fmt = (x, p) => p === 'D' ? x.toISOString().slice(0, 10).replace(/-/g, '') : p === 'M' ? x.toISOString().slice(0, 7).replace(/-/g, '') : String(x.getFullYear());
+  if (!end) end = fmt(d, period); if (!start) { const s = new Date(d); if (period === 'D') s.setDate(s.getDate() - 30); else if (period === 'M') s.setMonth(s.getMonth() - 24); else s.setFullYear(s.getFullYear() - 20); start = fmt(s, period); }
+  return cached(env, `ecos:${code}:${item}:${period}:${start}:${end}`, 6 * 3600, async () => { const j = await fetch(`https://ecos.bok.or.kr/api/StatisticSearch/${env.ECOS_KEY}/json/kr/1/1000/${code}/${period}/${start}/${end}/${item}`).then(r => r.json()); const rows = (j.StatisticSearch && j.StatisticSearch.row) || []; return { code, item, period, rows: rows.map(r => ({ time: r.TIME, value: parseFloat(r.DATA_VALUE), name: r.ITEM_NAME1 })), error: j.RESULT && j.RESULT.MESSAGE }; });
+}
+
 // ---------- 법제처 조문 ----------
 async function law(env, name, art) {
   const OC = env.LAW_OC || 'yjjn2005';
@@ -123,12 +144,14 @@ export default {
     const h = cors(req, env); if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
     const url = new URL(req.url); const p = url.pathname.replace(/\/$/, '') || '/'; const q = k => url.searchParams.get(k);
     try {
-      if (p === '/health' || p === '/') return json({ ok: true, version: VERSION, time: new Date().toISOString(), keys: { anthropic: !!env.ANTHROPIC_API_KEY, datagokr: !!env.DATA_GO_KR_KEY, ecos: !!env.ECOS_KEY, vworld: !!env.VWORLD_KEY } }, 200, h);
+      if (p === '/health' || p === '/') return json({ ok: true, version: VERSION, time: new Date().toISOString(), keys: { anthropic: !!env.ANTHROPIC_API_KEY, datagokr: !!env.DATA_GO_KR_KEY, ecos: !!env.ECOS_KEY, vworld: !!env.VWORLD_KEY }, routes: ['/data?url=', '/rtms', '/bldg', '/landuse', '/stats', '/ecos', '/law', '/sync/:pin', '/extract'] }, 200, h);
       if (p === '/extract' && req.method === 'POST') return json(await extract(env, await req.json()), 200, h);
       if (p === '/rtms') return json(await rtms(env, q('lawd'), q('kind') || 'nrg', parseInt(q('months') || '24', 10), q('ym')), 200, h);
       if (p === '/landuse') return json(await landuse(env, q('address') || ''), 200, h);
       if (p === '/bldg') return json(await bldg(env, q('pnu') || ''), 200, h);
       if (p === '/stats') return json(await stats(env), 200, h);
+      if (p === '/data') { const r = await dataGo(env, q('url') || ''); const hh = new Headers(r.headers); Object.entries(h).forEach(([k, v]) => hh.set(k, v)); return new Response(r.body, { status: r.status, headers: hh }); }
+      if (p === '/ecos') return json(await ecosRoute(env, q('code'), q('item'), q('period') || 'D', q('start'), q('end')), 200, h);
       if (p === '/law') return json(await law(env, q('name') || '소득세법', q('art') || '104의3'), 200, h);
       const sm = p.match(/^\/sync\/([A-Za-z0-9_-]{4,16})$/);
       if (sm) {
