@@ -3,7 +3,7 @@
  * 비밀값(wrangler secret): ANTHROPIC_API_KEY, DATA_GO_KR_KEY, ECOS_KEY, LAW_OC, VWORLD_KEY, ALPHAVANTAGE_KEY
  * KV: DEAL_CHECK_SYNC (케이스 동기화), DEAL_CHECK_CACHE (API 캐시)
  */
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const json = (o, status, extra) => new Response(JSON.stringify(o), { status: status || 200, headers: Object.assign({ 'content-type': 'application/json; charset=utf-8' }, extra || {}) });
 
 function cors(req, env) {
@@ -130,10 +130,10 @@ async function law(env, name, art) {
 // ---------- AI 브로셔 추출 (Claude) ----------
 async function extract(env, body) {
   if (!env.ANTHROPIC_API_KEY) return { error: 'ANTHROPIC_API_KEY 미설정' };
-  const schema = `{"type":"building|retail|factory|warehouse|lot|vacant|farm|forest","address":"지번 주소","zone":"용도지역","landArea":number(㎡),"gfa":number(㎡),"builtYear":"YYYY","floors":"지상 n층/지하 n층","parking":"n대","ask":number(원),"sellerHope":number(원),"rentroll":[{"floor":"","tenant":"","deposit":number,"rent":number(월),"mgmt":number(월),"expiry":"YYYY-MM","vacant":boolean}],"publicPricePerSqm":number,"missing":["누락 항목"],"confidence":0~1}`;
+  const schema = `{"type":"building|retail|factory|warehouse|lot|vacant|farm|forest","address":"지번 주소","zone":"용도지역","landArea":number(㎡),"gfa":number(㎡),"builtYear":"YYYY","floors":"지상 n층/지하 n층","parking":"n대","elevator":"n대","ask":number(원),"sellerHope":number(원),"saleScope":"whole|part","scopeNote":"매각 범위 설명(예: 지상 8~11층 전부, 매도자 철거조건)","exclusiveArea":number(매각·전용면적 ㎡),"buildingName":"건물명","mainUse":"주용도","publicPricePerSqm":number(개별공시지가 원/㎡),"notes":"특이사항(토지이용계획·지구단위계획·토지거래허가·임차현황 요약)","rentroll":[{"floor":"","tenant":"","deposit":number,"rent":number(월),"mgmt":number(월),"expiry":"YYYY-MM","vacant":boolean}],"publicPricePerSqm":number,"missing":["누락 항목"],"confidence":0~1}`;
   const content = [];
   if (body.file) content.push(body.mime === 'application/pdf' ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: body.file } } : { type: 'image', source: { type: 'base64', media_type: body.mime || 'image/jpeg', data: body.file } });
-  content.push({ type: 'text', text: `다음 부동산 매도 브로셔에서 정보를 추출해 아래 JSON 스키마로만 답하라. 금액은 원 단위 정수(억·만 환산), 면적은 ㎡(평이면 ×3.3058). 알 수 없는 값은 생략하고 missing에 적어라. 설명 없이 JSON만.\n스키마: ${schema}${body.text ? '\n\n브로셔 텍스트:\n' + body.text.slice(0, 30000) : ''}` });
+  content.push({ type: 'text', text: `다음 부동산 매도 브로셔에서 정보를 추출해 아래 JSON 스키마로만 답하라. 금액은 원 단위 정수(억·만 환산), 면적은 ㎡(평이면 ×3.3058). address는 매각 물건의 지번 주소(중개업소 주소 제외). 일부 층·구분소유 매각이면 saleScope="part"와 exclusiveArea(매매·매각·전용면적). 임대료가 없으면 rentroll은 빈 배열, 임차인 이름만 있으면 rent 0으로 층별 기재. 알 수 없는 값은 생략하고 missing에 적어라. 설명 없이 JSON만.\n스키마: ${schema}${body.text ? '\n\n브로셔 텍스트:\n' + body.text.slice(0, 30000) : ''}` });
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: env.CLAUDE_MODEL || 'claude-sonnet-4-5', max_tokens: 2000, messages: [{ role: 'user', content }] }) });
   const j = await r.json(); if (!r.ok) return { error: (j.error && j.error.message) || 'Claude API 오류' };
   const txt = (j.content || []).map(c => c.text || '').join(''); const m = txt.match(/\{[\s\S]*\}/); if (!m) return { error: 'JSON 파싱 실패', raw: txt.slice(0, 500) };
