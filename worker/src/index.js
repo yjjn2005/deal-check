@@ -3,7 +3,7 @@
  * 비밀값(wrangler secret): ANTHROPIC_API_KEY, DATA_GO_KR_KEY, ECOS_KEY, LAW_OC, VWORLD_KEY, ALPHAVANTAGE_KEY
  * KV: DEAL_CHECK_SYNC (케이스 동기화), DEAL_CHECK_CACHE (API 캐시)
  */
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const json = (o, status, extra) => new Response(JSON.stringify(o), { status: status || 200, headers: Object.assign({ 'content-type': 'application/json; charset=utf-8' }, extra || {}) });
 
 function cors(req, env) {
@@ -14,7 +14,7 @@ function cors(req, env) {
 }
 async function cached(env, key, ttlSec, fn) {
   if (env.DEAL_CHECK_CACHE) { const hit = await env.DEAL_CHECK_CACHE.get(key, 'json'); if (hit) return Object.assign(hit, { cached: true }); }
-  const v = await fn(); if (env.DEAL_CHECK_CACHE && v && !v.error) await env.DEAL_CHECK_CACHE.put(key, JSON.stringify(v), { expirationTtl: ttlSec }); return v;
+  const v = await fn(); const empty = v && Array.isArray(v.items) && v.items.length === 0; if (env.DEAL_CHECK_CACHE && v && !v.error && !empty) await env.DEAL_CHECK_CACHE.put(key, JSON.stringify(v), { expirationTtl: ttlSec }); return v;
 }
 function xmlItems(xml) { // 간단 XML → [{tag:value}]
   const items = []; const re = /<item>([\s\S]*?)<\/item>/g; let m;
@@ -33,11 +33,12 @@ async function rtms(env, lawd, kind, months, ymOnly) {
       const url = `https://apis.data.go.kr/1613000/${svc}/get${svc}?serviceKey=${encodeURIComponent(key)}&LAWD_CD=${lawd}&DEAL_YMD=${ym}&numOfRows=500&pageNo=1`;
       const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 deal-check' } }); const xml = await r.text();
       const items = xmlItems(xml).filter(it => !(it.cdealType || '').includes('O'));
+      const num = (...vals) => { for (const v of vals) { const n = parseFloat(String(v == null ? '' : v).replace(/,/g, '').trim()); if (!isNaN(n) && n > 0) return n; } return 0; };
       return { items: items.map(it => ({
         addr: [it.umdNm || it.법정동, it.jibun || it.지번].filter(Boolean).join(' '),
-        type: [it.buildingUse || it.건물주용도 || it.jimok || it.지목, it.landUse || it.용도지역].filter(Boolean).join('·'),
-        area: parseFloat(it.plottageAr || it.대지면적 || it.dealArea || it.거래면적 || it.buildingAr || it.건물면적 || 0),
-        bldgArea: parseFloat(it.buildingAr || it.건물면적 || 0),
+        type: [it.buildingUse || it.건물주용도 || it.jimok || it.지목, it.buildingType, it.landUse || it.용도지역].map(x => (x || '').trim()).filter(Boolean).join('·'),
+        area: num(it.plottageAr, it.대지면적, it.dealArea, it.거래면적, it.buildingAr, it.건물면적),
+        bldgArea: num(it.buildingAr, it.건물면적),
         price: parseInt(String(it.dealAmount || it.거래금액 || '0').replace(/[^\d]/g, ''), 10) * 10000,
         date: `${it.dealYear || it.년}-${String(it.dealMonth || it.월).padStart(2, '0')}`, built: it.buildYear || it.건축년도 || '', floor: it.floor || it.층 || '', dealType: it.dealingGbn || it.거래유형 || '' })) };
     });
