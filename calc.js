@@ -296,7 +296,8 @@
     // p: { wtp, wta, ask, sellerHope, buyerHope, weight(매수자 우위 0.4) }
     const w = p.weight ?? 0.4; const has = p.wtp >= p.wta;
     const zone = has ? { low: p.wta, high: p.wtp } : null;
-    const recommended = has ? p.wta + (p.wtp - p.wta) * w : (p.wta + p.wtp) / 2;
+    let recommended = has ? p.wta + (p.wtp - p.wta) * w : (p.wta + p.wtp) / 2;
+    if (has && p.ask > 0 && p.ask <= p.wtp && p.ask >= p.wta) recommended = Math.min(recommended, p.ask);
     const gap = has ? 0 : p.wta - p.wtp;
     return { hasZone: has, zone, recommended, gap, gapPct: p.wta ? gap / p.wta : 0,
       askGapPct: p.ask ? (recommended - p.ask) / p.ask : null,
@@ -306,11 +307,12 @@
   function grade(p) {
     // p: { hasZone, spread, dscr, riskBad(치명 리스크 수), riskWarn }
     let score = 0;
-    if (p.hasZone) score += 2; if ((p.spread ?? 0) >= 0.015) score += 2; else if ((p.spread ?? 0) >= 0) score += 1;
+    if (p.hasZone) score += 2; if (p.spread == null) score += 1; else if (p.spread >= 0.015) score += 2; else if (p.spread >= 0) score += 1;
     if ((p.dscr ?? 0) >= 1.3) score += 2; else if ((p.dscr ?? 0) >= 1.2) score += 1;
     if ((p.riskBad || 0) === 0) score += 2; else score -= 1;
     if ((p.riskWarn || 0) === 0) score += 1;
-    const g = score >= 8 ? 'A' : score >= 6 ? 'B' : score >= 3 ? 'C' : 'D';
+    let g = score >= 8 ? 'A' : score >= 6 ? 'B' : score >= 3 ? 'C' : 'D';
+    if (p.noIncome && g === 'A') g = 'B';
     return { grade: g, score, label: { A: '매수 적극 검토', B: '조건 충족 시 매수', C: '조건부 협상', D: '보류·재검토' }[g] };
   }
 
@@ -326,25 +328,35 @@
     const compsUnit = (c.comps || []).filter(x => x.use !== false && x.pricePerSqm > 0).map(x => x.pricePerSqm);
     const compsTotal = (c.comps || []).filter(x => x.use !== false && x.price > 0).map(x => x.price);
     if (type.income) {
+      if ((!c.rentroll || !c.rentroll.length) && c.marketRentPerSqm > 0 && (c.exclusiveArea || c.gfa) > 0) { const area = c.exclusiveArea || c.gfa; c = Object.assign({}, c, { rentroll: [{ floor: '추정', tenant: '시장임대료 추정', deposit: c.marketRentPerSqm * area * 10, rent: c.marketRentPerSqm * area, vacant: false }] }); res.rentEstimated = true; }
       const n = noi(c); res.noi = n;
       const caps = capRates({ riskFree: mkt.riskFree, premium: c.premium ?? type.premium, growth: c.growth, marketCap: mkt.marketCap ?? c.marketCap, loanRate: c.loanRate }); res.caps = caps;
       res.value = { buyer: incomeValue(n.noi, caps.buyer), neutral: incomeValue(n.noi, caps.neutral), seller: incomeValue(n.noi, caps.seller) };
       const w = wacc({ ltv: c.ltv, loanRate: c.loanRate, riskFree: mkt.riskFree, equityPremium: c.equityPremium, ownerType: c.buyerType, corpTax: 0.19 }); res.wacc = w;
       res.npv = npvMaxPrice({ noi: n.noi, growth: c.growth, years: c.years || 10, exitCap: (caps.neutral + 0.002), saleCost: 0.01, acqCostRate: c.acqCostRate ?? 0.056, discount: w.wacc });
-      const compsVal = compsUnit.length && c.landArea ? { low: quantile(compsUnit, 0.25) * c.landArea, mid: quantile(compsUnit, 0.5) * c.landArea, high: quantile(compsUnit, 0.75) * c.landArea } : null;
+      const bldgUnit = (c.comps || []).filter(x => x.use !== false && x.pricePerSqmBldg > 0).map(x => x.pricePerSqmBldg);
+      let compsVal = null;
+      if (c.saleScope === 'part' && c.exclusiveArea && bldgUnit.length) {
+        const areas = (c.comps || []).filter(x => x.use !== false && x.bldgArea > 0).map(x => x.bldgArea); const medArea = quantile(areas, 0.5) || 0;
+        const bulk = (medArea > 0 && c.exclusiveArea > 5 * medArea) ? (c.bulkDiscount ?? 0.30) : 0;
+        compsVal = { low: quantile(bldgUnit, 0.25) * c.exclusiveArea * (1 - bulk), mid: quantile(bldgUnit, 0.5) * c.exclusiveArea * (1 - bulk), high: quantile(bldgUnit, 0.75) * c.exclusiveArea * (1 - bulk), basis: '전용면적 단가' + (bulk ? ` × (1 − 일괄매각 할인 ${Math.round(bulk * 100)}%, 사례 중앙 ${Math.round(medArea)}㎡ 대비 ${Math.round(c.exclusiveArea / medArea)}배 규모)` : ''), bulkDiscount: bulk, medArea };
+      }
+      else if (compsUnit.length && c.landArea && c.saleScope !== 'part') compsVal = { low: quantile(compsUnit, 0.25) * c.landArea, mid: quantile(compsUnit, 0.5) * c.landArea, high: quantile(compsUnit, 0.75) * c.landArea, basis: '토지면적 단가' };
       res.compsVal = compsVal;
-      const candidates = [res.value.buyer, res.npv.maxPrice].concat(compsVal ? [compsVal.low] : []);
-      res.wtpRaw = Math.min.apply(null, candidates);
+      const noIncome = !(n.noi > 0);
+      const candidates = noIncome ? (compsVal ? [compsVal.low] : [0]) : [res.value.buyer, res.npv.maxPrice].concat(compsVal ? [compsVal.low] : []);
+      res.wtpRaw = Math.min.apply(null, candidates); res.noIncome = noIncome;
       res.wtp = Math.max(0, res.wtpRaw - riskDeduct);
       res.sellerFair = Math.max(res.value.neutral, compsVal ? compsVal.mid : 0);
-      const price = res.value.neutral;
-      const ht = holdingTax({ landPublic: c.landPublic || 0, landClass: 'separate', buildingStd: c.buildingStd || 0 }); res.holdingTax = ht;
+      const price = res.value.neutral > 0 ? res.value.neutral : (compsVal ? compsVal.mid : (c.ask || 0));
+      const share = (c.saleScope === 'part' && c.exclusiveArea && c.gfa) ? Math.min(1, c.exclusiveArea / c.gfa) : 1; res.landShare = share;
+      const ht = holdingTax({ landPublic: (c.landPublic || 0) * share, landClass: 'separate', buildingStd: (c.buildingStd || 0) * (c.saleScope === 'part' ? 1 : 1) }); res.holdingTax = ht;
       res.cf10 = cashflow({ price, noi: n.noi, growth: c.growth, years: 10, exitCap: caps.neutral + 0.002, ltv: c.ltv, loanRate: c.loanRate, interestOnly: c.interestOnly !== false, amortYears: 20, acqCostRate: c.acqCostRate ?? 0.056, deposit: n.deposit, holdingTaxY: ht.total, capexRatio: c.capexRatio || 0 });
       res.cf5 = cashflow({ price, noi: n.noi, growth: c.growth, years: 5, exitCap: caps.neutral + 0.002, ltv: c.ltv, loanRate: c.loanRate, interestOnly: c.interestOnly !== false, amortYears: 20, acqCostRate: c.acqCostRate ?? 0.056, deposit: n.deposit, holdingTaxY: ht.total, capexRatio: c.capexRatio || 0 });
       const d = debt(price, { ltv: c.ltv, loanRate: c.loanRate, interestOnly: false, amortYears: 20 });
       res.dscr = dscr(n.noi - ht.total, d.annualService); res.dscrIO = dscr(n.noi - ht.total, d.interest1); res.debt = d;
       res.askYield = c.ask ? { gross: n.rentY / (c.ask - n.deposit), noi: n.noi / (c.ask - n.deposit), cap: n.noi / c.ask } : null;
-      res.spread = (res.cf10.irr ?? 0) - (mkt.riskFree ?? 0.044);
+      res.spread = noIncome ? null : (res.cf10.irr ?? 0) - (mkt.riskFree ?? 0.044);
       res.sensitivity = [0.040, 0.045, 0.050, 0.055].map(cap => ({ cap, cells: [0.05, 0.10, 0.15, 0.20].map(v => { const nn = noi(Object.assign({}, c, { vacancy: v })).noi; return { vacancy: v, value: nn / cap }; }) }));
     } else {
       const lv = landValue({ area: c.landArea || 0, publicPricePerSqm: c.publicPricePerSqm || 0, comps: (c.comps || []).filter(x => x.use !== false && x.pricePerSqm > 0), ratioDefault: c.ratioDefault, far: c.far, devUnitPrice: c.devUnitPrice, discounts: (c.risks || []).filter(r => r.rate).map(r => ({ label: r.label, rate: r.rate })) });
@@ -378,9 +390,10 @@
     } else {
       res.wtaFinal = res.sellerFair * 0.97; res.wta = null;
     }
+    if (c.ask > 0 && res.wtaFinal > c.ask) { res.wtaComputed = res.wtaFinal; res.wtaFinal = c.ask; } // 매도자가 호가를 제시했다면 호가 이하는 수용 가능
     res.acqTax = acquisitionTax({ price: res.wtp || c.ask || 0, type: c.type, ownerType: c.buyerType, bigCity: c.bigCity, farmSelf2y: c.farmSelf2y });
     res.zopa = zopa({ wtp: res.wtp, wta: res.wtaFinal, ask: c.ask, sellerHope: c.sellerHope, buyerHope: c.buyerHope, weight: c.zopaWeight ?? 0.4 });
-    res.grade = grade({ hasZone: res.zopa.hasZone, spread: res.spread, dscr: res.dscr == null ? 1.3 : res.dscr, riskBad, riskWarn });
+    res.grade = grade({ hasZone: res.zopa.hasZone, spread: res.spread, dscr: (res.dscr == null || res.noIncome) ? 1.3 : res.dscr, riskBad, riskWarn, noIncome: !!res.noIncome });
     return res;
   }
 
