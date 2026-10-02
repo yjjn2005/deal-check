@@ -588,7 +588,7 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     const m = parcelSum(c); if (!m.own.length) return;
     c.landArea = Math.round(m.area * 100) / 100; if (m.pubAvg) { c.publicPricePerSqm = m.pubAvg; c.landPublic = Math.round(m.pubTotal); }
     const big = m.own.reduce((b, x) => (+x.area || 0) > (+b.area || 0) ? x : b, m.own[0]); if (big.zone) c.zone = big.zone; if (big.jimok) c.jimok = big.jimok;
-    c.multiParcel = m.own.length > 1; if (c.askAuto !== false) { try { applyPriceDefaults(c, false); } catch (e) { } }
+    c.multiParcel = m.own.length > 1; const zs = [...new Set(m.own.map(x => x.zone).filter(Boolean))]; if (zs.length) c.zoneFilter = zs.join(', '); /* 비교 용도지역 = 내 필지 용도지역 합집합 */ if (c.askAuto !== false) { try { applyPriceDefaults(c, false); } catch (e) { } }
   }
   function parcelCard(c) {
     const ps = c.parcels || []; const m = parcelSum(c); const nb = state.nearby;
@@ -620,7 +620,7 @@ ${ps.filter(x => x.own).length > 1 ? `<div class="fgrid g4" id="parcelopt" style
       if (c.parcels.length >= MAX_PARCELS) { fail.push(it.addr + ' (최대 ' + MAX_PARCELS + '필지)'); continue; }
       try { const r = await vworldSearch(it.addr); if (c.parcels.some(x => x.pnu === r.id)) continue; const o = await parcelInfo(r.id, (r.address && r.address.parcel) || it.addr); o.base = !!it.base; if (!it.base && ownBox && !ownBox.checked) o.own = false; if (it.base && !c.pnu) c.pnu = r.id; c.parcels.push(o); ok++; if (!c.lawd) c.lawd = r.id.slice(0, 5); } catch (e) { fail.push(it.addr); }
     }
-    syncParcels(c); save(); render(); toast(`${ok}필지 추가${fail.length ? ' · 실패: ' + fail.join(', ') : ''}`);
+    syncParcels(c); save(); render(); toast(`${ok}필지 추가${fail.length ? ' · 실패: ' + fail.join(', ') : ''} — 실거래 갱신 중…`); if (c.lawd) { try { await fetchRtms(); } catch (e) { } }
   }
   async function findNearby() {
     const c = state.current; if (!c.address) { toast('기준 주소를 먼저 입력하세요'); return; }
@@ -640,7 +640,7 @@ ${ps.filter(x => x.own).length > 1 ? `<div class="fgrid g4" id="parcelopt" style
     c.parcels = c.parcels || []; if (!c.parcels.length && c.pnu) { try { const o = await parcelInfo(c.pnu, c.address); o.base = true; c.parcels.push(o); } catch (e) { } }
     toast('필지 정보 조회 중…'); let n = 0;
     for (const it of sel) { if (c.parcels.length >= MAX_PARCELS) { toast('최대 ' + MAX_PARCELS + '필지까지입니다'); break; } try { c.parcels.push(await parcelInfo(it.pnu, it.addr)); n++; } catch (e) { } }
-    state.nearby = null; syncParcels(c); save(); render(); toast(n + '필지 추가 · 합산 반영');
+    state.nearby = null; syncParcels(c); save(); render(); toast(n + '필지 추가 · 합산 반영 — 실거래 갱신 중…'); if (c.lawd) { try { await fetchRtms(); } catch (e) { } }
   }
   async function lookupLand() {
     const c = state.current; if (!c.address) { toast('주소를 입력하세요'); return; }
