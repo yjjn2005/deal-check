@@ -167,6 +167,7 @@ ${card('물건 유형 · 기본 정보', `<div class="tabs" style="margin-bottom
 ${field('케이스 이름', 'name', c.name)}${field('소재지(지번)', 'address', c.address)}${field('PNU', 'pnu', c.pnu)}${field('시군구코드(LAWD_CD)', 'lawd', c.lawd)}${field('용도지역', 'zone', c.zone)}${field('대지면적(㎡)', 'landArea', c.landArea, 'num')}
 ${t.income ? field('연면적(㎡)', 'gfa', c.gfa, 'num') + field('매각 범위', 'saleScope', c.saleScope || 'whole', 'select', [['whole', '건물 전체(토지 포함)'], ['part', '일부 층·구분소유(집합)']]) + field('매각(전용)면적 ㎡ — 구분소유 시', 'exclusiveArea', c.exclusiveArea, 'num') + field('시장 임대료 ₩/㎡·월 (렌트롤 없을 때 추정)', 'marketRentPerSqm', c.marketRentPerSqm, 'money') + field('일괄매각 규모 할인 (소규모 구분상가 단가 대비)', 'bulkDiscount', c.bulkDiscount ?? 0.30, 'pct') + field('준공연도', 'builtYear', c.builtYear) + field('층수', 'floors', c.floors) + field('주차', 'parking', c.parking) + field('승강기', 'elevator', c.elevator) + field('개별공시지가(₩/㎡)', 'publicPricePerSqm', c.publicPricePerSqm, 'money') + field('주용도', 'mainUse', c.mainUse) : field('개별공시지가(₩/㎡)', 'publicPricePerSqm', c.publicPricePerSqm, 'money') + field('법정 용적률(%)', 'far', c.far ? c.far * 100 : '', 'num') + field('인근 분양·대지 단가(₩/㎡, 개발가치용)', 'devUnitPrice', c.devUnitPrice, 'money') + field('전용 후 사용 예정', 'willConvert', c.willConvert, 'check')}
 </div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.autoCollect()">주소로 자동 수집 (토지정보·건축물대장·실거래)</button><button class="btn sm" onclick="App.lookupLand()">토지정보만</button>${t.income ? '<button class="btn sm" onclick="App.fetchBldg()">건축물대장만</button>' : ''}</div>`)}
+<div style="grid-column:1/-1">${parcelCard(c)}</div>
 ${card('가격 · 금융', `<div class="fgrid g2" id="price">
 ${field('매도 호가 (억 단위 입력 가능)', 'ask', c.ask, 'eok')}${field('매도 희망가 (기본: 호가 +' + Math.round((state.settings.hopeMarkup ?? 0.2) * 100) + '%)', 'sellerHope', c.sellerHope, 'eok')}${field('매수 희망가 (기본: 호가 −10%)', 'buyerHope', c.buyerHope, 'eok')}${field('매수 주체', 'buyerType', c.buyerType, 'select', [['indiv', '개인'], ['corp', '법인']])}
 ${field('대출 비율 LTV', 'ltv', c.ltv, 'pct')}${field('적용 금리', 'loanRate', c.loanRate, 'pct')}${field('상환 방식', 'interestOnly', c.interestOnly, 'select', [[true, '이자만 상환'], [false, '원리금균등 20년']])}${field('수도권 대도시 법인 중과', 'bigCity', c.bigCity, 'check')}
@@ -189,6 +190,8 @@ ${t.income ? card('임대차 현황 (렌트롤)', `<table><thead><tr><th>층</th
   }
   function afterInput(root) {
     bindInputs(root, state.current, k => { if (k === 'name') renderSide(); if (k === 'ask') { const c = state.current; c.askAuto = false; if (!c.sellerHope || c.sellerHopeAuto) { c.sellerHope = Math.round(c.ask * (1 + (state.settings.hopeMarkup ?? 0.2))); c.sellerHopeAuto = true; } if (!c.buyerHope || c.buyerHopeAuto) { c.buyerHope = Math.round(c.ask * 0.9); c.buyerHopeAuto = true; } save(); render(); } if (k === 'sellerHope') state.current.sellerHopeAuto = false; if (k === 'buyerHope') state.current.buyerHopeAuto = false; if (k === 'unitPricePyeong') { state.current.unitPriceSqm = Math.round(state.current.unitPricePyeong / 3.3058); save(); render(); } if (k === 'unitPriceSqm') { state.current.unitPricePyeong = Math.round(state.current.unitPriceSqm * 3.3058); save(); render(); } if (k === 'askAreaBasis') render(); });
+    root.querySelectorAll('[data-pc]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.pc.split('.'); const x = state.current.parcels[+i]; if (k === 'own') x.own = el.checked; else if (el.dataset.t === 'money') x[k] = money(el.value); else if (el.dataset.t === 'num') x[k] = num(el.value); else x[k] = el.value; syncParcels(state.current); save(); render(); }));
+    root.querySelectorAll('[data-nb]').forEach(el => el.addEventListener('change', () => { state.nearby.items[+el.dataset.nb].sel = el.checked; }));
     root.querySelectorAll('[data-rr]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.rr.split('.'); let v = el.value; if (el.dataset.t === 'money') v = money(v); if (el.dataset.t === 'bool') v = v === '1'; state.current.rentroll[+i][k] = v; save(); render(); }));
     const drop = root.querySelector('#drop'); const fi = root.querySelector('#brochure');
     if (drop) { ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.style.background = '#efe9dc'; })); ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.style.background = ''; })); drop.addEventListener('drop', ev => handleFile(ev.dataTransfer.files[0])); fi.addEventListener('change', () => handleFile(fi.files[0])); }
@@ -417,7 +420,7 @@ ${card('출력 규칙', `<div class="muted">A4 · 네이비/골드 · 모든 금
     const kp = arr => `<div class="kpis">${arr.map(a => `<div><small>${a[0]}</small><b>${a[1]}</b></div>`).join('')}</div>`;
     const compsT = c.comps.filter(x => x.use !== false).length ? `<table><tr><th>소재지</th><th>용도</th><th>면적㎡</th><th>거래금액</th><th>단가/㎡</th><th>계약</th></tr>${c.comps.filter(x => x.use !== false).map(x => `<tr><td>${esc(x.addr)}</td><td>${esc(x.type)}</td><td>${x.area}</td><td>${fmt(x.price)}</td><td>${fmt(x.pricePerSqm)}</td><td>${esc(x.date)}</td></tr>`).join('')}</table>` : '<p class="small">채택 실거래 사례 없음</p>';
     const riskT = `<table><tr><th>항목</th><th>판정</th><th>확인 내용</th><th>감산</th><th>근거</th></tr>${c.risks.map(r => `<tr><td>${esc(r.label)}</td><td>${{ ok: '통과', warn: '주의', bad: '위험', na: '미확인' }[r.status]}</td><td>${esc(r.memo)}</td><td>${r.deduct ? fmt(r.deduct) : r.rate ? pct(r.rate, 0) : '—'}</td><td>${esc(r.law)}</td></tr>`).join('')}<tr><td colspan="3"><b>감산 총합계</b></td><td><b>${fmt(ev.riskDeduct)}</b></td><td></td></tr></table>`;
-    const overview = `<h2 class="sec">2. 물건 개요${t.income ? '·임대 현황' : ''}</h2>${kp([['소재지', esc(c.address) || '—'], ['유형·용도지역', t.label + ' · ' + esc(c.zone)], ['대지면적', c.landArea + '㎡ (' + (c.landArea / 3.3058).toFixed(1) + '평)'], [t.income ? '연면적·준공' : '개별공시지가', t.income ? c.gfa + '㎡ · ' + esc(c.builtYear) : fmt(c.publicPricePerSqm) + '/㎡']])}
+    const overview = `<h2 class="sec">2. 물건 개요${t.income ? '·임대 현황' : ''}</h2>${kp([['소재지', esc(c.address) || '—'], ...((c.parcels || []).filter(x => x.own).length > 1 ? [['구성 필지', (c.parcels.filter(x => x.own).length) + '필지 · ' + c.parcels.filter(x => x.own).map(x => esc((x.addr || '').split(' ').slice(-2).join(' ')) + (x.jimok ? '(' + esc(x.jimok) + ' ' + x.area + '㎡)' : '')).join(', ')]] : []), ['유형·용도지역', t.label + ' · ' + esc(c.zone)], ['대지면적', c.landArea + '㎡ (' + (c.landArea / 3.3058).toFixed(1) + '평)'], [t.income ? '연면적·준공' : '개별공시지가', t.income ? c.gfa + '㎡ · ' + esc(c.builtYear) : fmt(c.publicPricePerSqm) + '/㎡']])}
 ${t.income ? `<table><tr><th>층</th><th>임차인</th><th>보증금</th><th>월임대료</th><th>만료</th><th>상태</th></tr>${c.rentroll.map(r => `<tr><td>${esc(r.floor)}</td><td>${esc(r.tenant)}</td><td>${fmt(r.deposit)}</td><td>${fmt(r.rent)}</td><td>${esc(r.expiry)}</td><td>${r.vacant ? '공실' : '임대중'}</td></tr>`).join('')}<tr><td colspan="2"><b>총합계</b></td><td><b>${fmt(ev.noi.deposit)}</b></td><td><b>${fmt(ev.noi.rentY / 12)}</b></td><td colspan="2">GPI ${fmt(ev.noi.gpi)} · NOI ${fmt(ev.noi.noi)}</td></tr></table>` : `<p>${esc(c.notes)}</p>`}`;
     const market = `<h2 class="sec">3. 시장·실거래</h2>${kp([['기준금리', pct(m.baseRate, 2)], ['국고채 10년', pct(m.riskFree, 3)], ['미국채 10년', pct(m.us10y, 3)], ['시장 환원율', pct(m.marketCap, 1)]])}${compsT}${ev.compsVal ? `<p class="small">비준가액 25/50/75% 분위: ${fmt(ev.compsVal.low)} / ${fmt(ev.compsVal.mid)} / ${fmt(ev.compsVal.high)}</p>` : ''}${ev.land ? `<p class="small">단가 분위 25/50/75%: ${fmt(ev.land.unitQ.q25)} / ${fmt(ev.land.unitQ.q50)} / ${fmt(ev.land.unitQ.q75)} /㎡ · 공시지가 배율 ${ev.land.ratio.toFixed(2)}</p>` : ''}<p class="small">기준일 ${m.asOf} · 출처 ${esc(m.source)}</p>`;
     const risks = `<h2 class="sec">${kind === 'sell' ? '6. 리스크·법률 (매각 전 해소 항목)' : '6. 리스크·법률'}</h2>${riskT}<p class="small">조문은 법제처 국가법령정보 API(OC=yjjn2005) 조회 기준 ${C.LAW.asOf}.</p>`;
@@ -575,6 +578,68 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     const hits = CODES.filter(x => (x.sgg === cand || x.sgg === sggM[1] || x.sgg.replace(/\s/g, '') === cand.replace(/\s/g, '')) && (!sido || norm(x.sido).startsWith(norm(sido).slice(0, 2))));
     return hits.length ? hits[0].code : '';
   }
+
+  // ---------- 다필지 (최대 10필지) ----------
+  const MAX_PARCELS = 10;
+  const JIMOK = { '대': '대', '답': '답', '전': '전', '임': '임야', '잡': '잡종지', '도': '도로', '천': '하천', '구': '구거', '장': '공장용지', '주': '주유소용지', '차': '주차장', '창': '창고용지', '과': '과수원', '목': '목장용지', '공': '공원', '체': '체육용지', '유': '유지', '제': '제방', '묘': '묘지', '종': '종교용지', '학': '학교용지', '수': '수도용지', '사': '사적지', '광': '광천지', '염': '염전', '원': '유원지', '철': '철도용지', '양': '양어장', '창': '창고용지', '학': '학교용지' };
+  const parcelSum = c => { const own = (c.parcels || []).filter(x => x.own); const area = own.reduce((a, x) => a + (+x.area || 0), 0); const pubTotal = own.reduce((a, x) => a + (+x.area || 0) * (+x.pub || 0), 0); return { own, area, pubTotal, pubAvg: area ? Math.round(pubTotal / area) : 0 }; };
+  function syncParcels(c) {
+    const m = parcelSum(c); if (!m.own.length) return;
+    c.landArea = Math.round(m.area * 100) / 100; if (m.pubAvg) { c.publicPricePerSqm = m.pubAvg; c.landPublic = Math.round(m.pubTotal); }
+    const big = m.own.reduce((b, x) => (+x.area || 0) > (+b.area || 0) ? x : b, m.own[0]); if (big.zone) c.zone = big.zone; if (big.jimok) c.jimok = big.jimok;
+    c.multiParcel = m.own.length > 1; if (c.askAuto !== false) { try { applyPriceDefaults(c, false); } catch (e) { } }
+  }
+  function parcelCard(c) {
+    const ps = c.parcels || []; const m = parcelSum(c); const nb = state.nearby;
+    const rows = ps.map((x, i) => `<tr style="${x.own ? '' : 'opacity:.55'}"><td><input type="checkbox" data-pc="${i}.own" ${x.own ? 'checked' : ''}></td><td>${esc(x.addr || x.jibun)}${x.base ? ' ' + pill('기준', 'na') : ''}</td><td><input data-pc="${i}.jimok" value="${esc(x.jimok || '')}" style="width:70px"></td><td><input data-pc="${i}.area" data-t="num" value="${x.area || ''}" style="width:80px" inputmode="decimal"></td><td><input data-pc="${i}.zone" value="${esc(x.zone || '')}" style="width:130px"></td><td><input data-pc="${i}.pub" data-t="money" value="${x.pub ? Math.round(x.pub).toLocaleString('ko-KR') : ''}" style="width:90px"></td><td class="r">${x.area && x.pub ? fmt(x.area * x.pub) : '—'}</td><td><button class="btn sm" onclick="App.delParcel(${i})">삭제</button></td></tr>`).join('');
+    const table = ps.length ? `<table><thead><tr><th>내 토지</th><th>지번</th><th>지목</th><th>면적㎡</th><th>용도지역</th><th>공시지가/㎡</th><th class="r">공시지가 총액</th><th></th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td></td><td style="font-weight:700">내 토지 ${m.own.length}필지 합계</td><td></td><td style="font-weight:700">${(Math.round(m.area * 100) / 100).toLocaleString()}</td><td class="muted">${(m.area / 3.3058).toFixed(1)}평</td><td class="r muted">가중평균 ${fmt(m.pubAvg)}</td><td class="r" style="font-weight:700">${fmt(m.pubTotal)}</td><td></td></tr></tfoot></table>` : '<div class="muted">아직 필지가 없습니다. 아래에 지번을 넣거나 “인근 필지 찾기”를 누르세요.</div>';
+    const cand = nb ? (nb.loading ? '<div class="muted" style="margin-top:10px">인근 필지 조회 중…</div>' : nb.error ? `<div class="notice warn" style="margin-top:10px">${esc(nb.error)}</div>` : `<div style="margin-top:12px"><div style="font-weight:600;margin-bottom:6px">인근 필지 (가까운 순 · 내 토지만 체크)</div><table><thead><tr><th></th><th>지번</th><th>거리</th><th>공시지가/㎡</th></tr></thead><tbody>${nb.items.map((x, i) => `<tr><td><input type="checkbox" data-nb="${i}" ${x.sel ? 'checked' : ''}></td><td>${esc(x.addr)} <span class="muted">${esc(x.jimok || '')}</span></td><td>${x.dist}m</td><td class="r">${x.jiga ? fmt(x.jiga) : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">인근 필지를 찾지 못했습니다.</td></tr>'}</tbody></table><div style="margin-top:8px"><button class="btn sm primary" onclick="App.addNearby()">체크한 필지를 내 토지로 추가</button> <button class="btn sm" onclick="App.closeNearby()">닫기</button></div></div>`) : '';
+    return card(`필지 구성 (최대 ${MAX_PARCELS}필지 · 현재 ${ps.length})`, `${table}
+<div class="field" style="margin-top:12px"><label>지번 여러 개 입력 (줄바꿈·쉼표 구분 · 기준 주소와 같은 동이면 “20-6, 21, 22-1”처럼 지번만)</label><textarea id="parcelText" rows="3" placeholder="경기도 남양주시 화도읍 월산리 20-5&#10;20-6, 21"></textarea></div>
+<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.addParcels()">필지 조회·합산</button><button class="btn sm" onclick="App.findNearby()">인근 필지 찾기</button></div>${cand}
+<div class="muted" style="margin-top:8px">내 토지로 체크한 필지의 면적·공시지가·용도지역(면적 최대 필지 기준)이 위 기본 정보에 합산 반영됩니다. 타인 소유 필지는 체크를 해제해 두면 참고용으로만 남습니다.</div>`);
+  }
+  async function parcelInfo(pnu, addr, jibun) {
+    const o = { pnu, addr: addr || '', jibun: jibun || '', jimok: '', area: 0, zone: '', pub: 0, own: true };
+    const [lu, pp, ch] = await Promise.all([vworldNed('getLandUseAttr', pnu).catch(() => null), vworldNed('getIndvdLandPriceAttr', pnu).catch(() => null), vworldNed('getLandCharacteristics', pnu).catch(() => null)]);
+    try { const z = (lu.landUses.field || []).map(f => f.prposAreaDstrcCodeNm); o.zone = z.find(v => /지역$/.test(v) && !/도시지역/.test(v)) || z[0] || ''; } catch (e) { }
+    try { const f = pp.indvdLandPrices.field; o.pub = parseInt(f[f.length - 1].pblntfPclnd, 10) || 0; } catch (e) { }
+    try { const f = ch.landCharacteristicss.field[0]; o.area = parseFloat(f.lndpclAr) || 0; o.jimok = f.lndcgrCodeNm || ''; } catch (e) { }
+    return o;
+  }
+  async function addParcels() {
+    const c = state.current; const ta = document.getElementById('parcelText'); const text = ta ? ta.value : '';
+    c.parcels = c.parcels || []; const prefix = (c.address || '').replace(/\s*[\d-]+\S*$/, '').trim();
+    const list = []; if (!c.parcels.length && c.address) list.push({ addr: c.address, base: true });
+    text.split(/[\n;,]+/).map(x => x.trim()).filter(Boolean).forEach(tk => list.push({ addr: /^[\d-]+[가-힣]?$/.test(tk) ? prefix + ' ' + tk.replace(/[가-힣]$/, '') : tk }));
+    if (!list.length) { toast('지번을 입력하세요'); return; }
+    toast('필지 조회 중…'); let ok = 0, fail = [];
+    for (const it of list) {
+      if (c.parcels.length >= MAX_PARCELS) { fail.push(it.addr + ' (최대 ' + MAX_PARCELS + '필지)'); continue; }
+      try { const r = await vworldSearch(it.addr); if (c.parcels.some(x => x.pnu === r.id)) continue; const o = await parcelInfo(r.id, (r.address && r.address.parcel) || it.addr); o.base = !!it.base; if (it.base && !c.pnu) c.pnu = r.id; c.parcels.push(o); ok++; if (!c.lawd) c.lawd = r.id.slice(0, 5); } catch (e) { fail.push(it.addr); }
+    }
+    syncParcels(c); save(); render(); toast(`${ok}필지 추가${fail.length ? ' · 실패: ' + fail.join(', ') : ''}`);
+  }
+  async function findNearby() {
+    const c = state.current; if (!c.address) { toast('기준 주소를 먼저 입력하세요'); return; }
+    state.nearby = { loading: true, items: [] }; render();
+    try {
+      const S = state.settings; const base = await vworldSearch(c.address); const x0 = parseFloat(base.point.x), y0 = parseFloat(base.point.y); const d = 0.0010;
+      const j = await jsonp('https://api.vworld.kr/req/data', { service: 'data', request: 'GetFeature', data: 'LP_PA_CBND_BUBUN', key: S.vworldKey, domain: location.origin, geomFilter: `BOX(${x0 - d},${y0 - d},${x0 + d},${y0 + d})`, size: '100', geometry: 'true', crs: 'EPSG:4326', format: 'json' }, 15000);
+      const feats = (((j.response || {}).result || {}).featureCollection || {}).features || []; if (!feats.length) throw new Error('인근 필지 데이터가 없습니다 (브이월드는 국내 접속에서 동작)');
+      const have = new Set((c.parcels || []).map(x => x.pnu)); have.add(c.pnu);
+      const items = feats.map(f => { const pr = f.properties || {}; let ring = f.geometry && f.geometry.coordinates; while (ring && Array.isArray(ring[0]) && Array.isArray(ring[0][0])) ring = ring[0]; const pts = ring || []; const cx = pts.reduce((a, q) => a + q[0], 0) / (pts.length || 1), cy = pts.reduce((a, q) => a + q[1], 0) / (pts.length || 1); const dist = pts.length ? Math.round(Math.hypot((cx - x0) * 88100, (cy - y0) * 111000)) : 9999; const jb = String(pr.jibun || ''); const jm = JIMOK[(jb.match(/([가-힣])$/) || [])[1]] || ''; return { pnu: pr.pnu, addr: pr.addr || jb, jimok: jm, jiga: parseInt(pr.jiga, 10) || 0, dist, sel: false }; }).filter(x => x.pnu && !have.has(x.pnu)).sort((a, b) => a.dist - b.dist).slice(0, MAX_PARCELS);
+      state.nearby = { items };
+    } catch (e) { state.nearby = { error: '인근 필지 조회 실패: ' + e.message, items: [] }; }
+    render();
+  }
+  async function addNearby() {
+    const c = state.current; const nb = state.nearby; if (!nb || !nb.items) return; const sel = nb.items.filter(x => x.sel); if (!sel.length) { toast('내 토지인 필지를 체크하세요'); return; }
+    c.parcels = c.parcels || []; if (!c.parcels.length && c.pnu) { try { const o = await parcelInfo(c.pnu, c.address); o.base = true; c.parcels.push(o); } catch (e) { } }
+    toast('필지 정보 조회 중…'); let n = 0;
+    for (const it of sel) { if (c.parcels.length >= MAX_PARCELS) { toast('최대 ' + MAX_PARCELS + '필지까지입니다'); break; } try { c.parcels.push(await parcelInfo(it.pnu, it.addr)); n++; } catch (e) { } }
+    state.nearby = null; syncParcels(c); save(); render(); toast(n + '필지 추가 · 합산 반영');
+  }
   async function lookupLand() {
     const c = state.current; if (!c.address) { toast('주소를 입력하세요'); return; }
     if (!c.lawd) { const l = lawdFromAddress(c.address); if (l) c.lawd = l; }
@@ -632,6 +697,7 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
 
   // ---------- 공개 API ----------
   window.App = {
+    addParcels, findNearby, addNearby, closeNearby() { state.nearby = null; render(); }, delParcel(i) { const c = state.current; c.parcels.splice(i, 1); syncParcels(c); save(); render(); },
     setTab(t) { state.tab = t; location.hash = t; render(); },
     setSide(s) { state.side = s; save(); if (state.tab === 'input') state.tab = s === 'buy' ? 'buy' : 'sell'; render(); },
     setType(t) { state.current.type = t; initRisks(state.current); save(); render(); },
