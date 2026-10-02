@@ -81,13 +81,19 @@
   function save() { try { localStorage.setItem(LS, JSON.stringify({ cases: state.cases, currentId: state.current && state.current.id, settings: state.settings, side: state.side })); } catch (e) { } }
   const dongMatch = (c, x) => { const d = (c.dongFilter || '').split(/[,·/]/).map(v => v.trim()).filter(Boolean); return !d.length || d.some(k => (x.addr || '').includes(k)); };
   const purgeComps = c => { c.comps = (c.comps || []).filter(x => !x.auto || dongMatch(c, x)); };
+  const CASE_VER = 3; // 3: 비교 용도지역=전체, 단가 내림차순, 월산리·답내리 한정
+  function normalizeCase(c) {
+    if (!c) return c;
+    if ((c.ver || 0) < CASE_VER) { c.zoneFilter = ''; c.compSort = 'unit'; if (c.dongFilter == null && /월산리|답내리/.test(c.address || '')) c.dongFilter = '월산리, 답내리'; c.ver = CASE_VER; }
+    if (c.dongFilter) purgeComps(c);
+    const u = x => c.compSort === 'price' ? (x.price || 0) : (x.pricePerSqm || 0);
+    if (Array.isArray(c.comps)) c.comps.sort((a, b) => u(b) - u(a) || ((b.date || '') > (a.date || '') ? 1 : -1));
+    return c;
+  }
   function load() {
     try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); ['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].forEach(k => { if (sh[k]) state.settings[k] = sh[k]; }); } catch (e) { }
     try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); if (d) { state.cases = d.cases || []; state.settings = Object.assign(state.settings, d.settings || {}); state.side = d.side || 'buy'; state.current = state.cases.find(c => c.id === d.currentId) || state.cases[0] || null; } } catch (e) { }
-    if (!state.settings.zoneAllMig) { state.cases.forEach(x => { x.zoneFilter = ''; }); state.settings.zoneAllMig = true; }
-    if (!state.settings.dongMig) { state.cases.forEach(x => { if (x.dongFilter == null && /월산리|답내리/.test(x.address || '')) x.dongFilter = '월산리, 답내리'; purgeComps(x); }); state.settings.dongMig = true; }
-    if (!state.settings.sortMig) { state.cases.forEach(x => { x.compSort = 'unit'; }); state.settings.sortMig = true; }
-    state.cases.forEach(x => { if (x.dongFilter) purgeComps(x); });
+    state.cases.forEach(normalizeCase);
     if (!state.current) { state.current = wulsanCase(); state.cases = [state.current, sampleCase()]; }
     state.cases.forEach(c => { if (!c.market) c.market = Object.assign({}, MARKET_DEFAULT); if (!c.seller) c.seller = newCase().seller; initRisks(c); });
   }
@@ -509,7 +515,7 @@ ${card('기본 가정값', `<div class="fgrid g3">${field('프리미엄 오피�
 ${card('케이스 관리', `<table><thead><tr><th></th><th>이름</th><th>유형</th><th>호가</th><th>생성</th><th></th></tr></thead><tbody>${list}</tbody></table><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.newCase()">새 물건 입력</button><button class="btn sm" onclick="App.exportJson()">JSON 내보내기</button><label class="btn sm" for="imp">JSON 가져오기</label><input id="imp" type="file" accept="application/json" style="display:none"><button class="btn sm" onclick="App.loadWulsan()">월산리 20-5 케이스 만들기</button><button class="btn sm" onclick="App.loadSample()">근생빌딩 예시 만들기</button></div>`)}
 ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)', `<div style="display:flex;gap:6px;flex-wrap:wrap">${laws.map(l => `<button class="btn sm chip" onclick="App.law('${l[0]}','${l[1]}')">${l[0]} §${l[1]}</button>`).join('')}</div><div id="lawbox" style="margin-top:12px;font-size:12.5px;white-space:pre-wrap;max-height:360px;overflow:auto;background:var(--ivory);border-radius:8px;padding:12px">${esc(state.lawText || '조문 버튼을 누르면 현행 원문과 시행일자를 표시합니다. 앱 내 세율 파라미터 기준일: ' + C.LAW.asOf)}</div>`)}`;
   }
-  function afterSettings(root) { bindInputs(root, state.settings, k => { renderSide(); if (['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].includes(k)) { try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); sh[k] = state.settings[k]; localStorage.setItem('ynk_public_api', JSON.stringify(sh)); } catch (e) { } } }); const imp = root.querySelector('#imp'); if (imp) imp.addEventListener('change', async () => { try { const j = JSON.parse(await imp.files[0].text()); const arr = Array.isArray(j) ? j : [j]; arr.forEach(c => { c.id = 'c' + Date.now() + Math.random().toString(36).slice(2, 6); initRisks(c); state.cases.push(c); }); state.current = state.cases[state.cases.length - 1]; save(); render(); toast('가져오기 완료'); } catch (e) { toast('JSON 오류'); } }); }
+  function afterSettings(root) { bindInputs(root, state.settings, k => { renderSide(); if (['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].includes(k)) { try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); sh[k] = state.settings[k]; localStorage.setItem('ynk_public_api', JSON.stringify(sh)); } catch (e) { } } }); const imp = root.querySelector('#imp'); if (imp) imp.addEventListener('change', async () => { try { const j = JSON.parse(await imp.files[0].text()); const arr = Array.isArray(j) ? j : [j]; arr.forEach(c => { c.id = 'c' + Date.now() + Math.random().toString(36).slice(2, 6); normalizeCase(c); initRisks(c); state.cases.push(c); }); state.current = state.cases[state.cases.length - 1]; save(); render(); toast('가져오기 완료'); } catch (e) { toast('JSON 오류'); } }); }
 
   // ---------- Worker 연동 ----------
   const api = async (path, opts) => { const u = state.settings.workerUrl.replace(/\/$/, ''); if (!u) throw new Error('Worker 주소 없음'); const r = await fetch(u + path, opts); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
@@ -684,7 +690,7 @@ ${ps.filter(x => x.own).length > 1 ? `<div class="fgrid g4" id="parcelopt" style
   async function checkWorker() { try { const j = await api('/health'); state.workerOk = !!(j && j.ok); state.workerKeys = j.keys || {}; } catch (e) { state.workerOk = false; } }
   async function law(name, art) { try { $('#lawbox').textContent = '조회 중…'; const j = await api(`/law?name=${encodeURIComponent(name)}&art=${encodeURIComponent(art)}`); state.lawText = `${j.law} 제${art}조 (시행 ${j.effective}, 법령일련번호 ${j.mst})\n\n${j.text}`; $('#lawbox').textContent = state.lawText; } catch (e) { $('#lawbox').textContent = '조회 실패: ' + e.message; } }
   async function syncPush() { const s = state.settings; if (!s.pin) { toast('PIN을 입력하세요'); return; } try { await api('/sync/' + encodeURIComponent(s.pin), { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cases: state.cases, settings: { premium: s.premium, equityPremium: s.equityPremium, zopaWeight: s.zopaWeight, dscrMin: s.dscrMin, author: s.author }, at: new Date().toISOString() }) }); toast('서버 저장 완료'); } catch (e) { toast('실패: ' + e.message); } }
-  async function syncPull() { const s = state.settings; if (!s.pin) { toast('PIN을 입력하세요'); return; } try { const j = await api('/sync/' + encodeURIComponent(s.pin)); if (j && j.cases) { state.cases = j.cases; state.cases.forEach(initRisks); state.current = state.cases[0]; Object.assign(state.settings, j.settings || {}); save(); render(); toast('불러오기 완료 (' + (j.at || '').slice(0, 16) + ')'); } else toast('서버에 데이터 없음'); } catch (e) { toast('실패: ' + e.message); } }
+  async function syncPull() { const s = state.settings; if (!s.pin) { toast('PIN을 입력하세요'); return; } try { const j = await api('/sync/' + encodeURIComponent(s.pin)); if (j && j.cases) { state.cases = j.cases; state.cases.forEach(normalizeCase); state.cases.forEach(initRisks); state.current = state.cases[0]; Object.assign(state.settings, j.settings || {}); save(); render(); toast('불러오기 완료 (' + (j.at || '').slice(0, 16) + ')'); } else toast('서버에 데이터 없음'); } catch (e) { toast('실패: ' + e.message); } }
   async function ping() { try { const j = await api('/health'); toast('연결 OK · ' + (j.version || '')); } catch (e) { toast('연결 실패: ' + e.message); } }
 
   // ---------- 렌더 루프 ----------
