@@ -53,7 +53,7 @@
   }
   function wulsanCase() {
     const c = newCase({ name: '월산리 20-5 (나대지·노외주차장)', type: 'vacant', address: '경기도 남양주시 화도읍 월산리 20-5', pnu: '4136025627100200005', lawd: '41360', zone: '제1종일반주거지역', jimok: '대', landArea: 1040, publicPricePerSqm: 1132000, landPublic: 1132000 * 1040, priceYear: '2026', far: 2.0, bcr: 0.6,
-      ask: 0, sellerHope: 0, buyerHope: 0, landGrowth: 0.02, holdYearsPlan: 5, rtmsMonths: 12, zoneFilter: '제1종일반주거지역, 계획관리지역',
+      ask: 0, sellerHope: 0, buyerHope: 0, landGrowth: 0.02, holdYearsPlan: 5, rtmsMonths: 12, zoneFilter: '',
       seller: { ownerType: 'indiv', acquired: '', acquiredPrice: 0, expenses: 0, targetNet: 0, transfer: '2026-12-15', bizPeriods: [{ from: '2017-08-01', to: '2099-12-31', type: '노외주차장(주차장운영업)' }], share: 1, sellCostRate: 0.009, vat: 0 },
       notes: '브이월드 2026 토지특성: 지목 대, 1,040㎡, 제1종일반주거지역, 주상용, 광대로한면, 사다리형, 개별공시지가 ₩1,132,000/㎡(2026). 토지이용: 지구단위계획구역·토지거래계약허가구역·자연보전권역·수질보전특별대책지역·배출시설설치제한지역. 현황 노외주차장(대현로지스 임대).' });
     c.risks.forEach(r => {
@@ -82,6 +82,7 @@
   function load() {
     try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); ['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].forEach(k => { if (sh[k]) state.settings[k] = sh[k]; }); } catch (e) { }
     try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); if (d) { state.cases = d.cases || []; state.settings = Object.assign(state.settings, d.settings || {}); state.side = d.side || 'buy'; state.current = state.cases.find(c => c.id === d.currentId) || state.cases[0] || null; } } catch (e) { }
+    if (!state.settings.zoneAllMig) { state.cases.forEach(x => { x.zoneFilter = ''; }); state.settings.zoneAllMig = true; }
     if (!state.current) { state.current = wulsanCase(); state.cases = [state.current, sampleCase()]; }
     state.cases.forEach(c => { if (!c.market) c.market = Object.assign({}, MARKET_DEFAULT); if (!c.seller) c.seller = newCase().seller; initRisks(c); });
   }
@@ -275,7 +276,7 @@ ${t.income ? card('임대차 현황 (렌트롤)', `<table><thead><tr><th>층</th
 <div class="grid g4">${kpi('한국은행 기준금리', pct(m.baseRate, 2), '기준일 ' + m.asOf)}${kpi('국고채 10년 (무위험)', pct(m.riskFree, 3), '요구수익률 기준 · 3년 ' + pct(m.kr3y, 3))}${kpi('미국채 10년', pct(m.us10y, 3), '헤지 후 약 ' + pct(m.us10y - (m.us2y - m.kr2y), 2) + ' · 환율 ₩' + m.usdkrw)}${t.income ? kpi('공실률·시장 환원율', pct(c.type === 'building' ? m.vacancyOffice : c.type === 'warehouse' ? m.vacancyLogis : m.vacancyRetail, 1) + ' · ' + pct(m.marketCap, 1), '부동산원 2Q · 중소형 시장값') : kpi('지가변동률·토지 요구수익률', '+1.22% · ' + pct((m.riskFree ?? 0.044) + 0.015, 2), '2026 상반기 전국(수도권 +1.69%) · 국고채+1.5%p')}</div>
 <div class="grid g2">
 ${card('시장 데이터 갱신', `<div class="fgrid g3">${field('국고채 10년', 'market.riskFree', m.riskFree, 'pct')}${field('시장 환원율(실거래 역산)', 'market.marketCap', m.marketCap, 'pct')}${field('기준금리', 'market.baseRate', m.baseRate, 'pct')}${field('미국채 10년', 'market.us10y', m.us10y, 'pct')}${field('은행 기업대출 평균', 'market.loanRateAvg', m.loanRateAvg, 'pct')}${field('기준일', 'market.asOf', m.asOf)}</div><div style="display:flex;gap:8px;margin-top:10px;align-items:center"><button class="btn sm" onclick="App.fetchStats()">Worker에서 최신값 가져오기</button><span class="muted">${esc(m.source || '')}</span></div>`)}
-${card('실거래 자동 조회 (국토부 API)', `<div class="fgrid g3">${field('시군구코드', 'lawd', c.lawd)}${field('조회 기간(개월, 기본 12)', 'rtmsMonths', c.rtmsMonths || 12, 'num')}${field('비교 용도지역(쉼표 구분, 비우면 전체)', 'zoneFilter', c.zoneFilter != null ? c.zoneFilter : (c.zone || ''))}${field('유형', 'rtmsKind', c.rtmsKind || (t.income ? 'nrg' : 'land'), 'select', [['nrg', '상업업무용'], ['land', '토지'], ['indu', '공장·창고']])}</div><div style="display:flex;gap:8px;margin-top:10px;align-items:center"><button class="btn sm primary" onclick="App.fetchRtms()">실거래 조회</button><span class="muted" id="rtms-status">${esc(state.rtmsStatus || (C.TYPES[c.type].income ? (state.settings.dataKey || state.workerOk ? '준비됨' : '설정 탭에 공공데이터포털 서비스키 입력 필요') : '토지 실거래는 land-check-api로 바로 조회'))}</span></div>`)}
+${card('실거래 자동 조회 (국토부 API)', `<div class="fgrid g3">${field('시군구코드', 'lawd', c.lawd)}${field('조회 기간(개월, 기본 12)', 'rtmsMonths', c.rtmsMonths || 12, 'num')}${field('비교 용도지역(쉼표 구분, 비우면 전체)', 'zoneFilter', c.zoneFilter || '')}${field('유형', 'rtmsKind', c.rtmsKind || (t.income ? 'nrg' : 'land'), 'select', [['nrg', '상업업무용'], ['land', '토지'], ['indu', '공장·창고']])}</div><div style="display:flex;gap:8px;margin-top:10px;align-items:center"><button class="btn sm primary" onclick="App.fetchRtms()">실거래 조회</button><span class="muted" id="rtms-status">${esc(state.rtmsStatus || (C.TYPES[c.type].income ? (state.settings.dataKey || state.workerOk ? '준비됨' : '설정 탭에 공공데이터포털 서비스키 입력 필요') : '토지 실거래는 land-check-api로 바로 조회'))}</span></div>`)}
 </div>
 ${card('인근 실거래 사례 — 단가 높은순·최신순 (체크한 사례만 평가에 사용)', `<table><thead><tr><th>채택</th><th>소재지</th><th>용도·지역</th><th>면적㎡</th><th>거래금액</th><th class="r">단가</th><th>계약</th><th></th></tr></thead><tbody>${comps}</tbody></table><div class="muted" style="margin-top:8px">분위 단가: ${q}</div>`, `<button class="btn sm" onclick="App.sortComps()">단가↓·최신순 정렬</button> <button class="btn sm" onclick="App.addComp()">+ 사례 추가</button>`)}
 ${card('법률·행정 리스크 판정', `<div>${risks}</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:8px"><div class="muted">조문 근거는 설정 탭의 법령 조회(법제처 API)로 원문·시행일 확인. 토지는 감가 %(가격 비율), 수익형은 감산 ₩(원상복구·공실 해소비)</div><div>감산 합계 <b style="color:var(--red);font-size:15px">−${fmt(ded)}</b></div></div>`, `${pill('통과 ' + cnt('ok'), 'ok')} ${pill('주의 ' + cnt('warn'), 'warn')} ${pill('위험 ' + cnt('bad'), 'bad')}`)}
@@ -549,7 +550,7 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     const sizeOk = x => { const ar = (C.TYPES[c.type].income && c.saleScope === 'part') ? (x.bldgArea || x.area) : x.area; return !ar || (ar >= minArea && ar <= maxArea); };
     const jimokOk = x => !/도로|구거|하천|제방|묘지|유지/.test(x.type || '');
     const jimokSame = x => c.jimok ? (x.type || '').startsWith(c.jimok) : true;
-    const zf = (c.zoneFilter != null ? c.zoneFilter : (c.zone || '')).split(/[,·/]/).map(s => s.replace(/\s|지역$/g, '')).filter(Boolean);
+    const zf = (c.zoneFilter || '').split(/[,·/]/).map(s => s.replace(/\s|지역$/g, '')).filter(Boolean);
     const zoneOk = x => !zf.length || zf.some(z => (x.type || '').replace(/\s/g, '').includes(z));
     const sc = x => (zoneOk(x) ? 0 : -20) + (sizeOk(x) ? 0 : -5) + (jimokOk(x) ? 0 : -9) + (jimokSame(x) ? 1 : 0) + (x.addr.includes(dong) ? 2 : 0) + (c.zone && x.type.includes(c.zone.replace('지역', '')) ? 1 : 0) + (c.saleScope === 'part' ? (x.type.includes('집합') ? 2 : 0) + (floorOk(x) ? 2 : -3) : (x.type.includes('일반') ? 1 : 0));
     const unit = x => (C.TYPES[c.type].income && c.saleScope === 'part') ? (x.pricePerSqmBldg || 0) : (x.pricePerSqm || 0);
@@ -588,7 +589,7 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
     const m = parcelSum(c); if (!m.own.length) return;
     c.landArea = Math.round(m.area * 100) / 100; if (m.pubAvg) { c.publicPricePerSqm = m.pubAvg; c.landPublic = Math.round(m.pubTotal); }
     const big = m.own.reduce((b, x) => (+x.area || 0) > (+b.area || 0) ? x : b, m.own[0]); if (big.zone) c.zone = big.zone; if (big.jimok) c.jimok = big.jimok;
-    c.multiParcel = m.own.length > 1; const zs = [...new Set(m.own.map(x => x.zone).filter(Boolean))]; if (zs.length) c.zoneFilter = zs.join(', '); /* 비교 용도지역 = 내 필지 용도지역 합집합 */ if (c.askAuto !== false) { try { applyPriceDefaults(c, false); } catch (e) { } }
+    c.multiParcel = m.own.length > 1; if (c.askAuto !== false) { try { applyPriceDefaults(c, false); } catch (e) { } }
   }
   function parcelCard(c) {
     const ps = c.parcels || []; const m = parcelSum(c); const nb = state.nearby;
