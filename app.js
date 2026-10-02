@@ -94,8 +94,8 @@
   const num = v => { const n = parseFloat(String(v).replace(/[^\d.\-]/g, '')); return isNaN(n) ? 0 : n; };
   const money = v => { const s = String(v == null ? '' : v).replace(/,/g, '').replace(/원/g, '').trim(); if (!s) return 0; let total = 0, hit = false, rest = s;
     const take = (re, mul) => { const m = rest.match(re); if (m) { total += parseFloat(m[1]) * mul; hit = true; rest = rest.replace(m[0], ' '); } };
-    take(/([\d.]+)\s*억/, 1e8); take(/([\d.]+)\s*천\s*만/, 1e7); take(/([\d.]+)\s*백\s*만/, 1e6); take(/([\d.]+)\s*만/, 1e4); take(/([\d.]+)\s*천(?!\s*만)/, 1e3);
-    if (hit) return Math.round(total); const n = parseFloat(s.replace(/[^\d.\-]/g, '')); if (isNaN(n)) return 0; return Math.round(n); };
+    take(/([\d.]+)\s*억/, 1e8); take(/([\d.]+)\s*천\s*만/, 1e7); take(/([\d.]+)\s*백\s*만/, 1e6); take(/([\d.]+)\s*만/, 1e4); take(/([\d.]+)\s*천(?!\s*만)/, /억/.test(s) ? 1e7 : 1e3);
+    if (hit) { const tail = rest.replace(/[^\d.]/g, ''); if (tail && /억/.test(s) && !/만|천|백/.test(s.replace(/.*억/, ''))) total += parseFloat(tail) * 1e4; /* 7억 3000 → 7억3000만 (뒤 숫자 누락 방지) */ return Math.round(total); } const n = parseFloat(s.replace(/[^\d.\-]/g, '')); if (isNaN(n)) return 0; return Math.round(n); };
   const moneyEok = v => { const s = String(v == null ? '' : v).trim(); if (/^[\d.,]+$/.test(s)) { const n = parseFloat(s.replace(/,/g, '')); if (n > 0 && n < 100000) return Math.round(n * 1e8); } return money(v); }; // 가격 필드: 숫자만 10만 미만이면 억 단위 (예: 117 → 117억)
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const pill = (t, k) => `<span class="pill ${k}">${esc(t)}</span>`;
