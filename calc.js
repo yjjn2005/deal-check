@@ -191,8 +191,23 @@
     const byComps = { low: (unitQ.q25 || 0) * p.area, mid: (unitQ.q50 || 0) * p.area, high: (unitQ.q75 || 0) * p.area };
     const dev = p.far && p.devUnitPrice ? p.area * p.far * p.devUnitPrice * 0.35 : null; // 잔여법 간이: 분양가의 35%를 토지가 상한
     const disc = (p.discounts || []).reduce((s, d) => s + d.rate, 0);
-    const buyer = (byComps.low || byRatio) * (1 - disc), seller = Math.max(byComps.high || 0, byRatio) * (1 - disc * 0.5);
-    return { unitQ, ratio, byRatio, byComps, devCap: dev, discountRate: disc, buyer, seller, neutral: (byComps.mid || byRatio) * (1 - disc) };
+    // 다필지: 기준 필지(면적 최대) 대비 공시지가 비례로 필지별 평가 후 합산 (지목 보정 적용)
+    let parcels = null, assemblage = null;
+    const ps = (p.parcels || []).filter(x => x.own && x.area > 0 && x.pub > 0);
+    if (ps.length > 1) {
+      const ref = ps.reduce((b, x) => x.area > b.area ? x : b, ps[0]);
+      const jf = x => /도로|구거|하천|제방|유지/.test(x.jimok || '') ? 0.3 : 1; // 도로·구거 등은 공시지가 대비 낮게
+      const r = q => unitQ[q] ? unitQ[q] / ref.pub : null;
+      const rLow = r('q25'), rMid = r('q50'), rHigh = r('q75');
+      const rows = ps.map(x => ({ addr: x.addr, jimok: x.jimok, zone: x.zone, area: x.area, pub: x.pub, factor: jf(x), low: x.pub * x.area * (rLow ?? ratio) * jf(x), mid: x.pub * x.area * (rMid ?? ratio) * jf(x), high: x.pub * x.area * (rHigh ?? ratio) * jf(x), unitMid: x.pub * (rMid ?? ratio) * jf(x) }));
+      const sum = k => rows.reduce((a, x) => a + x[k], 0);
+      parcels = { rows, ref: ref.addr, low: sum('low'), mid: sum('mid'), high: sum('high') };
+      if (rLow != null) { byComps.low = parcels.low; byComps.mid = parcels.mid; byComps.high = parcels.high; }
+      const prem = Math.min(0.10, p.assemblagePremium ?? 0.03 * (ps.length - 1)); // 합필·일단지화 프리미엄(필지당 3%, 최대 10%)
+      assemblage = { premium: prem, value: (rMid != null ? parcels.mid : parcels.mid) * (1 + prem), gain: parcels.mid * prem };
+    }
+    const buyer = (byComps.low || byRatio) * (1 - disc), seller = Math.max(byComps.high || 0, byRatio) * (1 - disc * 0.5) * (1 + (assemblage ? assemblage.premium : 0));
+    return { unitQ, ratio, byRatio, byComps, devCap: dev, discountRate: disc, buyer, seller, neutral: (byComps.mid || byRatio) * (1 - disc), parcels, assemblage };
   }
   function farmlandLevy(publicPricePerSqm, area) {
     const per = Math.min(publicPricePerSqm * LAW.farmlandLevy.rate, LAW.farmlandLevy.capPerSqm);
@@ -359,7 +374,7 @@
       res.spread = noIncome ? null : (res.cf10.irr ?? 0) - (mkt.riskFree ?? 0.044);
       res.sensitivity = [0.040, 0.045, 0.050, 0.055].map(cap => ({ cap, cells: [0.05, 0.10, 0.15, 0.20].map(v => { const nn = noi(Object.assign({}, c, { vacancy: v })).noi; return { vacancy: v, value: nn / cap }; }) }));
     } else {
-      const lv = landValue({ area: c.landArea || 0, publicPricePerSqm: c.publicPricePerSqm || 0, comps: (c.comps || []).filter(x => x.use !== false && x.pricePerSqm > 0), ratioDefault: c.ratioDefault, far: c.far, devUnitPrice: c.devUnitPrice, discounts: (c.risks || []).filter(r => r.rate).map(r => ({ label: r.label, rate: r.rate })) });
+      const lv = landValue({ area: c.landArea || 0, publicPricePerSqm: c.publicPricePerSqm || 0, comps: (c.comps || []).filter(x => x.use !== false && x.pricePerSqm > 0), ratioDefault: c.ratioDefault, far: c.far, devUnitPrice: c.devUnitPrice, parcels: c.parcels, assemblagePremium: c.assemblagePremium, discounts: (c.risks || []).filter(r => r.rate).map(r => ({ label: r.label, rate: r.rate })) });
       res.land = lv;
       const levy = c.type === 'farm' ? farmlandLevy(c.publicPricePerSqm || 0, c.landArea || 0) : (c.type === 'forest' ? (c.forestLevy || 0) : 0);
       res.conversionLevy = levy;
