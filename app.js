@@ -79,11 +79,14 @@
 
   // ---------- 저장 ----------
   function save() { try { localStorage.setItem(LS, JSON.stringify({ cases: state.cases, currentId: state.current && state.current.id, settings: state.settings, side: state.side })); } catch (e) { } }
+  const dongMatch = (c, x) => { const d = (c.dongFilter || '').split(/[,·/]/).map(v => v.trim()).filter(Boolean); return !d.length || d.some(k => (x.addr || '').includes(k)); };
+  const purgeComps = c => { c.comps = (c.comps || []).filter(x => !x.auto || dongMatch(c, x)); };
   function load() {
     try { const sh = JSON.parse(localStorage.getItem('ynk_public_api') || '{}'); ['workerUrl', 'proxyUrl', 'landApi', 'dataKey', 'vworldKey'].forEach(k => { if (sh[k]) state.settings[k] = sh[k]; }); } catch (e) { }
     try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); if (d) { state.cases = d.cases || []; state.settings = Object.assign(state.settings, d.settings || {}); state.side = d.side || 'buy'; state.current = state.cases.find(c => c.id === d.currentId) || state.cases[0] || null; } } catch (e) { }
     if (!state.settings.zoneAllMig) { state.cases.forEach(x => { x.zoneFilter = ''; }); state.settings.zoneAllMig = true; }
-    if (!state.settings.dongMig) { state.cases.forEach(x => { if (x.dongFilter == null && /월산리|답내리/.test(x.address || '')) x.dongFilter = '월산리, 답내리'; }); state.settings.dongMig = true; }
+    if (!state.settings.dongMig) { state.cases.forEach(x => { if (x.dongFilter == null && /월산리|답내리/.test(x.address || '')) x.dongFilter = '월산리, 답내리'; purgeComps(x); }); state.settings.dongMig = true; }
+    state.cases.forEach(x => { if (x.dongFilter) purgeComps(x); });
     if (!state.current) { state.current = wulsanCase(); state.cases = [state.current, sampleCase()]; }
     state.cases.forEach(c => { if (!c.market) c.market = Object.assign({}, MARKET_DEFAULT); if (!c.seller) c.seller = newCase().seller; initRisks(c); });
   }
@@ -191,7 +194,7 @@ ${t.income ? card('임대차 현황 (렌트롤)', `<table><thead><tr><th>층</th
     return html;
   }
   function afterInput(root) {
-    bindInputs(root, state.current, k => { if (k === 'name') renderSide(); if (k === 'ask') { const c = state.current; c.askAuto = false; if (!c.sellerHope || c.sellerHopeAuto) { c.sellerHope = Math.round(c.ask * (1 + (state.settings.hopeMarkup ?? 0.2))); c.sellerHopeAuto = true; } if (!c.buyerHope || c.buyerHopeAuto) { c.buyerHope = Math.round(c.ask * 0.9); c.buyerHopeAuto = true; } save(); render(); } if (k === 'sellerHope') state.current.sellerHopeAuto = false; if (k === 'buyerHope') state.current.buyerHopeAuto = false; if (k === 'unitPricePyeong') { state.current.unitPriceSqm = Math.round(state.current.unitPricePyeong / 3.3058); save(); render(); } if (k === 'unitPriceSqm') { state.current.unitPricePyeong = Math.round(state.current.unitPriceSqm * 3.3058); save(); render(); } if (k === 'askAreaBasis') render(); });
+    bindInputs(root, state.current, k => { if (k === 'name') renderSide(); if (k === 'dongFilter') { purgeComps(state.current); save(); render(); if (state.current.lawd) fetchRtms(); } if (k === 'ask') { const c = state.current; c.askAuto = false; if (!c.sellerHope || c.sellerHopeAuto) { c.sellerHope = Math.round(c.ask * (1 + (state.settings.hopeMarkup ?? 0.2))); c.sellerHopeAuto = true; } if (!c.buyerHope || c.buyerHopeAuto) { c.buyerHope = Math.round(c.ask * 0.9); c.buyerHopeAuto = true; } save(); render(); } if (k === 'sellerHope') state.current.sellerHopeAuto = false; if (k === 'buyerHope') state.current.buyerHopeAuto = false; if (k === 'unitPricePyeong') { state.current.unitPriceSqm = Math.round(state.current.unitPricePyeong / 3.3058); save(); render(); } if (k === 'unitPriceSqm') { state.current.unitPricePyeong = Math.round(state.current.unitPriceSqm * 3.3058); save(); render(); } if (k === 'askAreaBasis') render(); });
     root.querySelectorAll('[data-pc]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.pc.split('.'); const x = state.current.parcels[+i]; if (k === 'own') x.own = el.checked; else if (el.dataset.t === 'money') x[k] = money(el.value); else if (el.dataset.t === 'num') x[k] = num(el.value); else x[k] = el.value; syncParcels(state.current); save(); render(); }));
     root.querySelectorAll('[data-nb]').forEach(el => el.addEventListener('change', () => { state.nearby.items[+el.dataset.nb].sel = el.checked; }));
     root.querySelectorAll('[data-rr]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.rr.split('.'); let v = el.value; if (el.dataset.t === 'money') v = money(v); if (el.dataset.t === 'bool') v = v === '1'; state.current.rentroll[+i][k] = v; save(); render(); }));
@@ -284,7 +287,7 @@ ${card('법률·행정 리스크 판정', `<div>${risks}</div><div style="displa
 `;
   }
   function afterMarket(root) {
-    bindInputs(root, state.current, () => { });
+    bindInputs(root, state.current, k => { if (k === 'dongFilter') { purgeComps(state.current); save(); render(); if (state.current.lawd) fetchRtms(); } });
     root.querySelectorAll('[data-c]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.c.split('.'); const x = state.current.comps[+i]; let v = el.type === 'checkbox' ? el.checked : el.value; if (el.dataset.t === 'money') v = money(v); else if (el.dataset.t === 'num') v = num(v); x[k] = v; if (x.area > 0 && x.price > 0) x.pricePerSqm = Math.round(x.price / x.area); save(); render(); }));
     root.querySelectorAll('[data-r]').forEach(el => el.addEventListener('change', () => { const [i, k] = el.dataset.r.split('.'); let v = el.value; if (el.dataset.t === 'money') v = num(v); if (el.dataset.t === 'pct') v = num(v) / 100; state.current.risks[+i][k] = v; save(); if (k !== 'memo') render(); }));
   }
