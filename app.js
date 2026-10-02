@@ -593,12 +593,12 @@ ${card('법령 근거 조회 (법제처 국가법령정보 API · Worker /law)',
   function parcelCard(c) {
     const ps = c.parcels || []; const m = parcelSum(c); const nb = state.nearby;
     const rows = ps.map((x, i) => `<tr style="${x.own ? '' : 'opacity:.55'}"><td><input type="checkbox" data-pc="${i}.own" ${x.own ? 'checked' : ''}></td><td>${esc(x.addr || x.jibun)}${x.base ? ' ' + pill('기준', 'na') : ''}</td><td><input data-pc="${i}.jimok" value="${esc(x.jimok || '')}" style="width:70px"></td><td><input data-pc="${i}.area" data-t="num" value="${x.area || ''}" style="width:80px" inputmode="decimal"></td><td><input data-pc="${i}.zone" value="${esc(x.zone || '')}" style="width:130px"></td><td><input data-pc="${i}.pub" data-t="money" value="${x.pub ? Math.round(x.pub).toLocaleString('ko-KR') : ''}" style="width:90px"></td><td class="r">${x.area && x.pub ? fmt(x.area * x.pub) : '—'}</td><td><button class="btn sm" onclick="App.delParcel(${i})">삭제</button></td></tr>`).join('');
-    const table = ps.length ? `<table><thead><tr><th>내 토지</th><th>지번</th><th>지목</th><th>면적㎡</th><th>용도지역</th><th>공시지가/㎡</th><th class="r">공시지가 총액</th><th></th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td></td><td style="font-weight:700">내 토지 ${m.own.length}필지 합계</td><td></td><td style="font-weight:700">${(Math.round(m.area * 100) / 100).toLocaleString()}</td><td class="muted">${(m.area / 3.3058).toFixed(1)}평</td><td class="r muted">가중평균 ${fmt(m.pubAvg)}</td><td class="r" style="font-weight:700">${fmt(m.pubTotal)}</td><td></td></tr></tfoot></table>` : '<div class="muted">아직 필지가 없습니다. 아래에 지번을 넣거나 “인근 필지 찾기”를 누르세요.</div>';
+    const table = ps.length ? `<table><thead><tr><th>내 토지</th><th>지번</th><th>지목</th><th>면적㎡</th><th>용도지역</th><th>공시지가/㎡</th><th class="r">공시지가 총액</th><th></th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td></td><td style="font-weight:700">내 토지 ${m.own.length}필지 합계</td><td></td><td style="font-weight:700">${(Math.round(m.area * 100) / 100).toLocaleString()}</td><td class="muted">${(m.area / 3.3058).toFixed(1)}평</td><td class="r muted">가중평균 ${fmt(m.pubAvg)}</td><td class="r" style="font-weight:700">${fmt(m.pubTotal)}</td><td></td></tr></tfoot></table>` : '<div class="muted">아직 필지가 없습니다. 아래에 기준 필지와 인근 필지의 지번을 입력하세요.</div>';
     const cand = nb ? (nb.loading ? '<div class="muted" style="margin-top:10px">인근 필지 조회 중…</div>' : nb.error ? `<div class="notice warn" style="margin-top:10px">${esc(nb.error)}</div>` : `<div style="margin-top:12px"><div style="font-weight:600;margin-bottom:6px">인근 필지 (가까운 순 · 내 토지만 체크)</div><table><thead><tr><th></th><th>지번</th><th>거리</th><th>공시지가/㎡</th></tr></thead><tbody>${nb.items.map((x, i) => `<tr><td><input type="checkbox" data-nb="${i}" ${x.sel ? 'checked' : ''}></td><td>${esc(x.addr)} <span class="muted">${esc(x.jimok || '')}</span></td><td>${x.dist}m</td><td class="r">${x.jiga ? fmt(x.jiga) : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">인근 필지를 찾지 못했습니다.</td></tr>'}</tbody></table><div style="margin-top:8px"><button class="btn sm primary" onclick="App.addNearby()">체크한 필지를 내 토지로 추가</button> <button class="btn sm" onclick="App.closeNearby()">닫기</button></div></div>`) : '';
     return card(`필지 구성 (최대 ${MAX_PARCELS}필지 · 현재 ${ps.length})`, `${table}
-<div class="field" style="margin-top:12px"><label>지번 여러 개 입력 (줄바꿈·쉼표 구분 · 기준 주소와 같은 동이면 “20-6, 21, 22-1”처럼 지번만)</label><textarea id="parcelText" rows="3" placeholder="경기도 남양주시 화도읍 월산리 20-5&#10;20-6, 21"></textarea></div>
+<div class="field" style="margin-top:12px"><label>인근 필지 지번 입력 — 기준 주소와 같은 동이면 지번만 (예: 20-6, 21, 22-1 · 산 지번은 “산12-3” · 다른 동은 전체 주소) · 줄바꿈·쉼표 구분, 최대 10필지</label><textarea id="parcelText" rows="3" placeholder="20-6, 21, 22-1&#10;경기도 남양주시 화도읍 월산리 23"></textarea></div>
 ${ps.filter(x => x.own).length > 1 ? `<div class="fgrid g4" id="parcelopt" style="margin-top:10px">${field('합필 프리미엄 (비우면 자동: 필지당 3%·최대 10%, 0=미적용)', 'assemblagePremium', c.assemblagePremium, 'pct')}</div>` : ''}
-<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.addParcels()">필지 조회·합산</button><button class="btn sm" onclick="App.findNearby()">인근 필지 찾기</button></div>${cand}
+<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm primary" onclick="App.addParcels()">지번으로 필지 조회·추가</button><label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="parcelOwn" checked> 내 토지로 추가 (해제 시 참고용)</label></div>${cand}
 <div class="muted" style="margin-top:8px">내 토지로 체크한 필지의 면적·공시지가·용도지역(면적 최대 필지 기준)이 위 기본 정보에 합산 반영됩니다. 타인 소유 필지는 체크를 해제해 두면 참고용으로만 남습니다.</div>`);
   }
   async function parcelInfo(pnu, addr, jibun) {
@@ -610,15 +610,15 @@ ${ps.filter(x => x.own).length > 1 ? `<div class="fgrid g4" id="parcelopt" style
     return o;
   }
   async function addParcels() {
-    const c = state.current; const ta = document.getElementById('parcelText'); const text = ta ? ta.value : '';
+    const c = state.current; const ta = document.getElementById('parcelText'); const text = ta ? ta.value : ''; const ownBox = document.getElementById('parcelOwn');
     c.parcels = c.parcels || []; const prefix = (c.address || '').replace(/\s*[\d-]+\S*$/, '').trim();
     const list = []; if (!c.parcels.length && c.address) list.push({ addr: c.address, base: true });
-    text.split(/[\n;,]+/).map(x => x.trim()).filter(Boolean).forEach(tk => list.push({ addr: /^[\d-]+[가-힣]?$/.test(tk) ? prefix + ' ' + tk.replace(/[가-힣]$/, '') : tk }));
+    text.split(/[\n;,]+/).map(x => x.trim()).filter(Boolean).forEach(tk => list.push({ addr: /^산?\s*[\d-]+\s*[가-힣]?$/.test(tk) ? prefix + ' ' + tk.replace(/\s*[가-힣]$/, '').replace(/^산\s*/, '산 ') : tk }));
     if (!list.length) { toast('지번을 입력하세요'); return; }
     toast('필지 조회 중…'); let ok = 0, fail = [];
     for (const it of list) {
       if (c.parcels.length >= MAX_PARCELS) { fail.push(it.addr + ' (최대 ' + MAX_PARCELS + '필지)'); continue; }
-      try { const r = await vworldSearch(it.addr); if (c.parcels.some(x => x.pnu === r.id)) continue; const o = await parcelInfo(r.id, (r.address && r.address.parcel) || it.addr); o.base = !!it.base; if (it.base && !c.pnu) c.pnu = r.id; c.parcels.push(o); ok++; if (!c.lawd) c.lawd = r.id.slice(0, 5); } catch (e) { fail.push(it.addr); }
+      try { const r = await vworldSearch(it.addr); if (c.parcels.some(x => x.pnu === r.id)) continue; const o = await parcelInfo(r.id, (r.address && r.address.parcel) || it.addr); o.base = !!it.base; if (!it.base && ownBox && !ownBox.checked) o.own = false; if (it.base && !c.pnu) c.pnu = r.id; c.parcels.push(o); ok++; if (!c.lawd) c.lawd = r.id.slice(0, 5); } catch (e) { fail.push(it.addr); }
     }
     syncParcels(c); save(); render(); toast(`${ok}필지 추가${fail.length ? ' · 실패: ' + fail.join(', ') : ''}`);
   }
